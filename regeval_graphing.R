@@ -380,8 +380,8 @@ plotauc <- function(oneunif){
 
 # FINAL PLOTS
 # Reference: Area under the ROC curves (median AUC) : Figure 4/5 
-plotauc(what="median", oneunif="unif")
-plotauc(what="median", oneunif="ones")
+plotauc(oneunif="unif")
+plotauc(oneunif="ones")
 
 
 plotaucbox <- function(oneunif){

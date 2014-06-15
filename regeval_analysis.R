@@ -21,6 +21,11 @@ xscaled <- apply(logprobx, 2, scale)
 modelresults <- runmodels(xscaled, yscaled, seed=101, iterations=10000, oracle=rep(0, ncol(xscaled)))
 saveRDS(modelresults, "modelresults.RDS")
 
+# This is not a serious error. Ignore
+# In predict.lm.spike(object = train_path[[fold]][[feature]],  ... :
+#                      Implicit intercept added to newdata
+
+
 #####III. Generate LD variable selections #####
 # Variable selection using the Method of lagged differences(LD) ###
 selectionvector <- function(df){
