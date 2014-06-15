@@ -1,11 +1,12 @@
-workdir <- "~/simulclean"
+######0. This should be the git directory #####
+workdir <- "~/yourgitdirectory/regeval"
 dir.create(workdir)
 setwd(workdir)
 
-###### Ia. libraries, locales and algorithms######
-source('~/microbiome/regeval_packages.R')
-source('~/microbiome/regeval_algorithms.R')
-source("~/microbiome/regeval_corrplot.R")
+###### I. libraries and locales ######
+source('./regeval_packages.R')
+source('./regeval_algorithms.R')
+source("./regeval_corrplot.R")
 library("BoomSpikeSlab")
 
 ###### Ib. Load and process data  ######

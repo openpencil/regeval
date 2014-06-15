@@ -2,7 +2,7 @@
 #' @author Taiyun Wei
 #' @email weitaiyun@gmail.com
 
-source("~/microbiome/mycolorlegend.R")
+source("./mycolorlegend.R")
 mycorrplot <- function(corr,
 		method = c("circle", "square", "ellipse", "number", "shade", "color", "pie"),
 		type = c("full", "lower", "upper"), add = FALSE, 

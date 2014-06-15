@@ -1,9 +1,11 @@
-workdir <- "~/simulclean"
+######0. This should be the git directory #####
+workdir <- "~/yourgitdirectory/regeval"
 dir.create(workdir)
 setwd(workdir)
 
-###### Ia. libraries and locales######
-source('~/microbiome/regeval_packages.R')
+###### I. libraries and locales ######
+source('./regeval_packages.R')
+
 
 ###### Ib. Data that was used for the simulation ######
 load(file="example_dataset.rda")
