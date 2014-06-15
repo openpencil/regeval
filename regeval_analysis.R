@@ -143,7 +143,7 @@ makeggplot <- function(ipcast){
   xinterest <- xscaled[,unique(tolower(labelit(ggframe$variable)))]
   corx <- cor(x=xinterest, method="spearman")
   pdf("Selected_Var_Correlations.pdf", width=15, height=12)
-  mycorrplot(method="color", corr=corx, col=gencolours(10000),
+  mycorrplot(method="color", corr=corx, col=gencolours(550),
            cl.pos="b",cl.length=5, cl.cex=1,
            tl.col="black", cex.axis=0.5, tl.cex=1,
            type="lower", diag=F, bg="transparent",
