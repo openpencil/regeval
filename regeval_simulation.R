@@ -1,9 +1,10 @@
-workdir <- "~/simulclean/"
+######0. This should be the git directory #####
+workdir <- "~/yourgitdirectory/regeval"
 dir.create(workdir)
 setwd(workdir)
 
 ###### I. libraries and locales ######
-source('~/microbiome/regeval_packages.R')
+source('./regeval_packages.R')
 
 ###### extra libraries ######
 ## Follow instructions for installing the BoomSpikeSlab package from:
@@ -19,7 +20,7 @@ source('~/microbiome/regeval_packages.R')
 library("BoomSpikeSlab")
 
 ##### II. Load in algorithms #####
-source('~/microbiome/regeval_algorithms.R')
+source('./regeval_algorithms.R')
 
 ##### III. Get ingredients for simulating data #####
 
@@ -169,7 +170,7 @@ simuloptions <- expand.grid(setup=names(setuplist),
 
 ### Test set-up for a few simulations
 testsimul <- expand.grid(setup=names(setuplist), 
-                            betavalue=betavalues[2], 
+                            betavalue=betavalues, 
                             cutoff=cutoffrange[2:3], 
                             snr=snrout[2:3], 
                             simulnum=c(1:5))
