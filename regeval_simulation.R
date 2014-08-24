@@ -153,7 +153,7 @@ testsimul <- expand.grid(setup=names(setuplist),
                             betavalue=betavalues, 
                             cutoff=cutoffrange[2:3], 
                             snr=snrout[2:3], 
-                            simulnum=c(1:5))
+                            simulnum=c(1:3))
 
 ### For a few number of simulations, activate this ###
 # simuloptions <- testsimul
