@@ -20,3 +20,4 @@ Please step-through the code and comments within these scripts for detailed inst
 |regeval_analysis.R | Application of the algorithms on the example data + Comparison of findings | Analysis + Visualization|
 |regeval_colorlegend.R | Corrplot color legend | Visualization |
 |regeval_corrplot.R| Slightly modified corrplot code |  Visualization |
+|regeval_colored_dendrogram.R | Slightly modified cluster dendrogram code | Visualization |
