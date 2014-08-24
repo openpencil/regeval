@@ -10,7 +10,7 @@ Please step-through the code and comments within these scripts for detailed inst
  
 ### Additional files in the repository include:
 | File       | Description  |
-| ----------|:-----------------|
+|:----------|:-----------------|
 |example_dataset.rda    | An example design matrix     |
 |example_response.rda | An example response vector|
 |regeval_packages.R| Installs all packages needed for the evaluation and loads the libraries |
