@@ -1,81 +1,129 @@
-######0. This should be the git directory #####
-workdir <- "~/yourgitdirectory/regeval"
+###### 0. This should be the git directory ######
+workdir <- "~/regeval"
 dir.create(workdir)
 setwd(workdir)
 
 ###### I. libraries and locales ######
 source('./regeval_packages.R')
 source('./regeval_algorithms.R')
-source("./regeval_corrplot.R")
-library("BoomSpikeSlab")
+source('./regeval_corrplot.R')
+source('./regeval_colored_dendrogram.R')
+source('./regeval_colorlegend.R')
 
 ###### Ib. Load and process data  ######
 load(file="example_dataset.rda")
 load(file="example_response.rda") 
 
-logprobx <-  logprobclean(exampledata)
+## Process y ## 
 yscaled <- scale(exampleresponse$response)
-xscaled <- apply(logprobx, 2, scale)
 
-#####II. Run analysis #####
-modelresults <- runmodels(xscaled, yscaled, seed=101, iterations=10000, oracle=rep(0, ncol(xscaled)))
-saveRDS(modelresults, "modelresults.RDS")
-
-# This is not a serious error. Ignore
-# In predict.lm.spike(object = train_path[[fold]][[feature]],  ... :
-#                      Implicit intercept added to newdata
-
-
-#####III. Generate LD variable selections #####
-# Variable selection using the Method of lagged differences(LD) ###
-selectionvector <- function(df){
-  dforder <- df[order(df$ele, decreasing=T),]
-  # Find the first order lagged differences
-  difforder <- -(diff(dforder$ele, 1))
-  # Find the index corresponding to the maximum lagged difference
-  maxdiffindex <- which(max(difforder) == difforder)[1]
-  # Build a vector of 1s and 0s. 1s: Selected variables, 0s. Variables not selected.
-  select <- ifelse(1:nrow(df) <= maxdiffindex, 1, 0)
-  names(select) <- dforder$var
-  selectedvars <- dforder$var[which(select==1)]
-  return(selectedvars)
+## Function for processing x ##
+processx <- function(countdata, refindex) {
+  ## Remove rows and columns with zero rowSums and colSums ##
+  ## Convert sequence counts to log probabilities ##
+  logprobx <-  logprobclean(countdata)
+  ## Address sum-to-1 redundancy ## 
+  ## Select reference variable. (Equation 3) ##
+  referencevarindex <- order(colSums(countdata), decreasing=T)[refindex]
+  ## Drop reference variable from the design matrix. ##
+  nonredundantmatrix <- logprobx[,-referencevarindex]
+  ## Scale the design matrix to make mean 0 and variance 1 for all columns
+  nonredundantxscaled <- apply(nonredundantmatrix, 2, scale)
+  return(nonredundantxscaled)
 }
 
-# Just in case you are picking off where you left earlier.
-# modelresults <- readRDS("modelresults.RDS")
-#db
-inclprobs <- sapply(modelresults$inclprobs, function(ele){
-  names(ele) <- gsub("^x", "", names(ele))
-  eledf <- data.frame(ele)
-  eledf$var <- rownames(eledf)
-  eledf$ele <- rescale(eledf$ele, to=c(0,1))
-  selectedvars <- selectionvector(eledf)
-  selectip <- data.frame(vars=selectedvars, ip=eledf[selectedvars, "ele"])
-  return(selectip)
+###### II. Run analysis ######
+modelresults <- sapply(c(1, 2), function(element){
+  xscaled <- processx(exampledata, element)
+  results <- runmodels(xscaled, yscaled, seed=101, iterations=10000,
+                       oracle=rep(0, ncol(xscaled)))
+  return(results)
 }, simplify=F)
 
+# Ignore these non-consequential memory-based warning messages coming from the doMC package.
+# rsession(5276) malloc: *** error for object 0x7fe72d67dd40: pointer being freed was not allocated
+# *** set a breakpoint in malloc_error_break to debug
+# This is not a serious error. Ignore
+# In predict.lm.spike(object = train_path[[fold]][[feature]],  ... :
+# Implicit intercept added to newdata
 
-#ele <- "enc"
-nonip <- sapply(names(modelresults$varsout), function(ele){
-  if (grepl("true", ele)){
-    return(c())
-  } else {
-    datasub <- modelresults$varsout[[ele]]
-    df <- data.frame(vars=datasub, ip=1)
-  }
-  return(df)
-}, simplify=F)
+names(modelresults) <- c("ref1", "ref2")
 
-allip <- ldply(inclprobs)
-allnonip <- ldply(nonip)
-iplist <-  rbind(allip, allnonip)
-ipcast <- cast(iplist, formula=.id~vars, value="ip", fill=0)
+# Save model results
+saveRDS(modelresults, "modelresults.RDS")
 
 
+###### III. Average models across two reference variable baselines ######
+meltit <- function(datasub, model){
+  dmelt <- melt(datasub$inclprobs[[model]])
+  dmelt$var <- rownames(dmelt)
+  return(dmelt)
+}
 
-########IV. Graphing ########
+averagemodels <- function(){
+  data1 <- modelresults$ref1
+  data2 <- modelresults$ref2
+  ipaverage <- sapply(names(data1$inclprobs), function(model){
+    d1 <- meltit(data1, model)
+    d2 <- meltit(data2, model)
+    d1d2 <- merge(d1, d2, by="var", all=T)
+    d1d2$mean <- rowMeans(d1d2[,c("value.x", "value.y")], na.rm=TRUE)
+    meanvector <- d1d2$mean
+    names(meanvector) <- d1d2$var
+    means <- meanvector[grep("Intercept", names(meanvector), invert=T)]
+    return(means)
+  }, simplify=F)
+  varintersect <- sapply(names(data1$varsout), function(model){
+    unionvars <- union(data1$varsout[[model]], data2$varsout[[model]])
+    unions <- grep("Intercept", unionvars, invert=T, value=T)
+    return(unions)
+  }, simplify=F)
+  return(list(ip=ipaverage, var=varintersect))
+}
 
-#####a. Colours######
+## Get the average model results ##  
+averageresults <- averagemodels()
+
+###### IV. Combine non-ip and ip method findings  ######
+
+compileresults <- function(){
+  dfip <- averageresults$ip
+  dfvar <- averageresults$var
+  # Arrange IP values in descending order
+  ipvals <- sapply(names(dfip), function(model){
+    ip <- dfip[[model]]
+    names(ip) <- gsub("^x", "", names(ip))
+    ipdf <- data.frame(ip)
+    if (grepl("(ss|sr)", model)){
+      ipdf$ip <- ipdf$ip/100
+    }
+    ipdf <- ipdf[order(ipdf$ip, decreasing=T),,drop=F]
+    ipdf$num <- 1:nrow(ipdf)
+    ipdf$vars <- rownames(ipdf)
+    return(data.table(ipdf))
+  }, simplify=F)
+  allip <- ldply(ipvals)
+  colnames(allip)[1] <- "model" 
+  allip$model <- toupper(allip$model)
+  # Package up the non-IP methods
+  varselect <- sapply(setdiff(names(dfvar), "truevars"), function(model){
+    dv <- data.frame(vars=dfvar[[model]], ip=1, num=1)
+    return(dv)
+  }, simplify=F)
+  varvalues <- ldply(varselect)
+  setnames(varvalues, ".id", "model")
+  varvalues$model <- toupper(varvalues$model)
+  combomodels <- ldply(list(ip=allip, var=varvalues))
+  modelcast <- cast(data=combomodels, formula=model~vars, fill=0, value="ip")
+  rownames(modelcast) <- modelcast$model
+  allmodels <- modelcast[,-1]
+  return(list(modelcast=allmodels, modelips=allip))
+}
+allmodelscompiled <- compileresults()
+
+###### V. Cluster models together based on their inclusion probability profiles ######
+
+## Generate colours for models ##
 rgb <- c("#800026", "#860026", "#8D0026", "#940026", "#9A0026", "#A10026", 
          "#A80026", "#AE0026", "#B50026", "#BC0026", "#C00225", "#C40523", 
          "#C80822", "#CD0B21", "#D10D20", "#D5101F", "#D9131E", "#DD161D", 
@@ -107,51 +155,162 @@ gencolours <- colorRampPalette(rgb)
 twocolour <- c("#FFFFFF", "#ADDD8E")
 gencolor <- colorRampPalette(twocolour)
 
-########b. Construct heatmap and correlation plots################
-labelit <- function(feedin){feedout <- toupper(gsub("^.*\\d{2}_", "", feedin))}
+newcolours <- c("#d73027", "#f46d43", "#e08214", "#66bd63", 
+                "#136c39", "#1d91c0", "#19467e", "#c2a5cf", 
+                "#9970ab", "#dd3497", "#ae017e")
+names(newcolours) <- c("BMA", "BMAC", "ENC", "LR", 
+                       "LRC", "LS", "LSC", "PR", 
+                       "PS", "SR", "SS")
 
-makeggplot <- function(ipcast){
+rankdistribution <- function(){
+  datasub <- allmodelscompiled$modelips
+  p <- ggplot(datasub, aes(x=num, y=ip, colour=model))
+  p <- p + geom_line()
+  p <- p + scale_colour_manual(values=newcolours, name="Approaches")
+  p <- p + theme(legend.justification=c(0,0), legend.position=c(0.7,0.05))
+  p <- p + theme(legend.background=element_rect(fill = "transparent"))
+  p <- p + xlab("Rank of the genera") + ylab("Inclusion probability")
+  p <- p + guides(colour = guide_legend(override.aes = list(size=3)))
+  p <- p + scale_x_continuous(breaks=c(1, seq(25, max(datasub$num), by=25)), 
+                                labels=c(1, seq(25, max(datasub$num), by=25)))
+  p <- p + lightertheme
+  ggsave("IP_rank_distribution.pdf", plot=p, width=6.7, height=3.7, units="in", limitsize=F)
+}
+
+# FINAL PLOTS
+# Comparison of inclusion probability profiles across all the eleven approaches: Figure 9a and Figure 9b (Top panels)
+rankdistribution()
+
+corrplotit <- function(){
+  rankcor <- 1/(1 + as.matrix(dist(allmodelscompiled$modelcast, "euclidean")))
+  colnames(rankcor) <- rownames(allmodelscompiled$modelcast)
+  rownames(rankcor)  <- rownames(allmodelscompiled$modelcast)
+  pdf("ALLMODELS_corrcomparison.pdf", width=12, height=8)  
+  mycorrplot(method="color", corr=rankcor, col=gencolours(592),
+             cl.pos="b",cl.length=5, cl.cex=1,
+             tl.col="black", cex.axis=0.5, tl.cex=1,
+             type="lower", diag=T, bg="transparent",
+             addgrid.col="#f4f4f5", addCoefasPercent=T, addCoef.col="black",
+             mar=c(0,0,0,0), order="hclust", hclust.method="average")
+  dev.off()
+  clustorder <- hclust(dist(allmodelscompiled$modelcast, method="euclidean"), method="average")
+  clustorder$labels <- rownames(allmodelscompiled$modelcast)
+  pdf("ALLMODELS_clusterdendrogram.pdf", width=7.7, height=3)  
+  A2Rplot(clustorder, k=11, boxes=F, main="",
+          col.up="gray50", col.down=newcolours, 
+          lwd.up=2, 
+          lty.up="solid")
+  dev.off()
+}
+
+# FINAL PLOTS
+# Comparison of inclusion probability profiles across all the eleven approaches: Figure 9a and Figure 9b (Bottom panels)
+corrplotit()
+
+##### VI. Compare variable selections #####
+# Variable selection using the Method of lagged differences(LD) ###
+# df <- bactresults$ip$bma
+
+selectvars <- function(ipvector){
+  dforder <- ipvector[order(ipvector, decreasing=T)]
+  # Find the first order lagged differences
+  difforder <- -(diff(dforder, 1))
+  # Find the index corresponding to the maximum lagged difference
+  maxdiffindex <- which(max(difforder) == difforder)[1]
+  # Build a vector of 1s and 0s. 1s: Selected variables, 0s. Variables not selected.
+  select <- ifelse(1:length(ipvector) <= maxdiffindex, 1, 0)
+  names(select) <- names(dforder)
+  selectedvars <- names(dforder[which(select==1)])
+  return(selectedvars)
+}
+
+# Isolate only the selected variables
+compileselected <- function(){
+  dfip <- averageresults$ip
+  dfvar <- averageresults$var
+  # Select variables by method of lagged differences and grab their inclusion probabilities
+  ipselect <- sapply(names(dfip), function(model){
+    dm <- dfip[[model]]
+    sv <- selectvars(dm)
+    withip <- dm[sv]
+    names(withip) <- gsub("^x|xscaled", "", names(withip))
+    if(model %in% c("ss", "sr")){
+      withip <- withip/100
+    }
+    withmelt <- melt(withip)
+    ips <- data.frame(var=rownames(withmelt), ip=withmelt)
+    return(ips)
+  },simplify=F)
+  ipvalues <- ldply(ipselect)
+  # For non-ip assigning methods, get all the variables and assign them an IP of 1.0
+  varselect <- sapply(setdiff(names(dfvar), "truevars"), function(model){
+    dv <- data.frame(var=dfvar[[model]], value=1)
+    return(dv)
+  }, simplify=F)
+  varvalues <- ldply(varselect)
+  # Combine ip and non-ip methods
+  allvars <- rbindlist(list(ipvalues, varvalues))
+  datacast <- cast(allvars, formula=.id~var, value="ip", fill=0)
+  rownames(datacast) <- datacast$.id
+  return(datacast)
+}
+
+## Generate selected variable matrix ##
+selectedvarmatrix <- compileselected()
+
+labelit <- function(feedin){
+  feedout <- gsub("^.*\\d{2}_", "", feedin)
+  return(feedout)
+}
+
+comparevarselections <- function(){
+  # Matrix of only the selected variables
+  ipcast  <- selectedvarmatrix
+  # Find maximum number of selected variables for graphing dimensions
+  numvar <- ncol(ipcast)
+  # Matrix of all the variables
+  allcast <- allmodelscompiled$modelcast
+  
   csums <- sapply(2:ncol(ipcast), function(numcol){
     sum(as.numeric((ipcast[,numcol])), na.rm=T)
   })
   ggorder <- ipcast[,c(1, (order(csums, decreasing=T)+1))]
   rownames(ggorder) <- ggorder$.id
   ggorder <- ggorder[,-1]
+  # To make variables with the highest IP appear on top
+  ggorder <- cbind(ggorder[,rev(colnames(ggorder))], Approach=rep(-1, nrow(ggorder)))
   ### Start code for heatmap model comparison ####
   rownames(ggorder) <- paste(sprintf("%02d", seq(1, nrow(ggorder), 1)), rownames(ggorder), sep="_")
-  colnames(ggorder) <- paste(sprintf("%02d", seq(1, ncol(ggorder), 1)), colnames(ggorder), sep="_")
+  colnames(ggorder) <- paste(sprintf("%02d", seq(ncol(ggorder), 1, -1)), colnames(ggorder), sep="_")
   ggorder$model <- rownames(ggorder)
   ggframe <- melt(data.frame(ggorder), id.vars="model")
-  ggframe$percent <- round(ggframe$value*100, 0)
-  
-  #FINAL PLOT
-  #Reference: Figure 14, Figure 16
-  p <- ggplot(ggframe, aes(x=model, y=variable))
-  p <- p + geom_tile(aes(fill = value), colour = "white")
+  ggframe$modelvar <- paste(toupper(gsub("\\d{2}_", "", ggframe$model)), 
+                            gsub("X\\d{2}_", "", ggframe$variable), sep="_")
+  allcast$model <- rownames(allcast)
+  allmelt <- melt(data.frame(allcast), id.vars="model")
+  allmelt$modelvar <- paste(allmelt$model, allmelt$variable, sep="_")
+  merged <- merge(allmelt, ggframe, by="modelvar", all.y=T)
+  merged$percent <- ifelse(merged$value.y== -1, "", round(merged$value.x*100, 0))
+  merged$colorval <- ifelse(merged$value.y== -1, 0, merged$value.y)
+  mergeddt <- data.table(merged)
+  # one slice of the data for retrieving all the model names
+  mergeddt <- mergeddt[grepl("X02", variable.y)]
+  mergeddt[,modellab:=toupper(gsub("^\\d+_", "", model.x))]
+  p <- ggplot(merged, aes(x=model.y, y=variable.y))
+  p <- p + geom_tile(aes(fill = colorval), colour = "white")
   p <- p + scale_fill_gradientn(colours = gencolor(2), guide="none")
-  p <- p + theme_grey(base_size = 12) 
   p <- p + scale_y_discrete(labels=labelit)
-  p <- p + scale_x_discrete(labels=labelit)
-  p <- p + theme(axis.text.x = element_text(colour = "black"), axis.text.y = element_text(colour = "black"))
+  p <- p + scale_x_discrete(labels=labelit, breaks=NULL)
+  p <- p + theme(axis.text.x = element_blank(), 
+                 axis.text.y = element_text(colour = "black", vjust=0.1, size=12))
   p <- p + geom_text(aes(label=percent))
   p <- p + xlab("") + ylab("")
-  ggsave("All_Models_Comparisons.pdf", plot=p, width=6, height=8, units="in", limitsize=F)
+  p <- p + geom_text(data = mergeddt,
+                     aes(label = modellab), y = ncol(ggorder)-1, size = 3.5, fontface="bold")
+  calcheight <- 0.28 * (numvar+1)
+  ggsave("ALLMODELS_selectedvarscomparison.pdf", plot=p, width=8, height=calcheight, units="in", limitsize=F)
+  }
 
-  #### Start correlation plot
-  #FINAL PLOT
-  #Reference: Figure 15, Figure 17
-  xinterest <- xscaled[,unique(tolower(labelit(ggframe$variable)))]
-  corx <- cor(x=xinterest, method="spearman")
-  pdf("Selected_Var_Correlations.pdf", width=15, height=12)
-  mycorrplot(method="color", corr=corx, col=gencolours(550),
-           cl.pos="b",cl.length=5, cl.cex=1,
-           tl.col="black", cex.axis=0.5, tl.cex=1,
-           type="lower", diag=F, bg="transparent",
-           addgrid.col="#f4f4f5", addCoefasPercent=T, addCoef.col="black",
-           mar=c(0,0,0,0), order="FPC") 
-  dev.off()
-}
-makeggplot(ipcast)
-
-
-
+# FINAL PLOTS
+# Summary of influential variables selected across all models: Figure 7 and Figure 8 ##
+comparevarselections()

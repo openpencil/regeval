@@ -27,10 +27,9 @@ installpackages<- function(pkgs) {
   }
 }
 
-installpackages(c("ggplot2", "plyr", "Hmisc", "reshape", "reshape2", 
-                  "scales", "gridExtra", "glmnet","doMC", "quadrupen",
-                  "RColorBrewer", "mice", "mixOmics", "corrplot", 
-                  "igraph", "data.table", "dirmult", "mht", "digest"))
+installpackages(c("ggplot2", "plyr", "Hmisc", "reshape", "BoomSpikeSlab",
+                  "reshape2", "scales", "gridExtra", "glmnet", "corrplot",
+                  "doMC","RColorBrewer", "data.table", "digest"))
 
 ##### II. Set locales #####
 Sys.setlocale("LC_CTYPE","en_US.UTF-8")
@@ -42,19 +41,20 @@ Sys.setlocale("LC_MESSAGES","en_US.UTF-8")
 
 ##### III. Favourite ggplot theme #####
 lightertheme <- theme( panel.background = element_rect(fill = "#f5f5f4", colour = "#fbfbfc"),
-                       panel.border = element_rect(colour = "grey80", linetype="solid", fill=NA),
+                       panel.border = element_rect(colour = "grey90", linetype="solid", fill=NA),
                        panel.grid.major = element_line(colour = "grey90", size=0.08),
                        panel.grid.minor = element_line(colour = "grey90", size=0.08),
-                       panel.margin = unit(0.3, "lines"),
+                       panel.margin = unit(0.2, "lines"),
                        plot.background=element_rect(fill="transparent"),
-                       plot.margin=unit(c(0,0,0,0),"mm"),
+                       plot.margin=unit(c(1,2.8,0,0.5),"mm"),
                        text = element_text(family="Helvetica", colour="black", size=12),
                        plot.title = element_text(size = 12),
                        strip.background=element_rect(fill="transparent", color="#ffffff", size=1),
                        strip.text.x=element_text(size=12, colour="black"),
                        strip.text.y=element_text(size=12, colour="black"),
-                       axis.text.x=element_text(size=12, colour="black"),
+                       axis.text.x=element_text(colour="black"),
                        axis.text.y=element_text(size=12, colour="black"),
+                       axis.title.y=element_text(vjust=1),
                        legend.background=element_rect(fill = "transparent"),
                        legend.background=element_blank(),
                        legend.key=element_blank())

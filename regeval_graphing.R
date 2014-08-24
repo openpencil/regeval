@@ -1,9 +1,9 @@
 ######0. This should be the git directory #####
-workdir <- "~/yourgitdirectory/regeval"
+workdir <- "~/regeval"
 dir.create(workdir)
 setwd(workdir)
 
-###### I. libraries and locales ######
+###### Ia. libraries and locales ######
 source('./regeval_packages.R')
 
 
@@ -14,6 +14,9 @@ numsamples <- nrow(exampledata)
 
 ###### II. Load common functions ######
 evaluateselection <- function(selectedvars, truevars, allvars){
+  # remove intercept term: not necessary
+  allvars <- setdiff(allvars, "(Intercept)")
+  
   nonselectedvars <- setdiff(allvars, selectedvars)
   falsevars <- setdiff(allvars, truevars)
   #false positive rate
@@ -35,11 +38,6 @@ evaluateselection <- function(selectedvars, truevars, allvars){
   eval <- c(fpr, tpr, fscore, precision, recall)
   names(eval) <- c("FPR", "TPR", "FSCORE", "PRECISION", "RECALL")
   return(eval)
-}
-
-genrescale <- function(value){
-  rvalue <- rescale(x=value, to=c(0,1))
-  return(rvalue)
 }
 
 # Calculate the plotting points for the ROC curve
@@ -91,27 +89,21 @@ rankcorrelate <- function(multicol){
 }
 
 # Method of lagged differences(LD), scree ##
-selectionvector <- function(multicol, method){
-#   # #Uncomment for debugging!
-#     multicol <- bindpre[model== "lr" & 
-#                          snr == "16.00" & 
-#                          cutoff == 0.02 & 
-#                          simulnum == "1" &
-#                          onesunif == "ones",
-#                          c("variables", "rescale"), with=F]
+selectionvector <- function(multicol){
+  #   # #Uncomment for debugging!
+  #     multicol <- bindpre[model== "lr" & 
+  #                          snr == "16.00" & 
+  #                          cutoff == 0.02 & 
+  #                          simulnum == "1" &
+  #                          onesunif == "ones",
+  #                          c("variables", "rescale"), with=F]
   multiorder <- multicol[order(multicol$rescale, decreasing=T),]
-  if (method == "ld") {
-    # Find the first order lagged differences
-    difforder <- -(diff(multiorder$rescale, 1))
-    # Find the index corresponding to the maximum lagged difference
-    maxdiffindex <- which(max(difforder) == difforder)[1]
-    # Build a vector of 1s and 0s. 1s: Selected variables, 0s. Variables not selected.
-    select <- ifelse(1:nrow(multiorder) <= maxdiffindex, 1, 0)
-  } else if (method == "nbylogp") {
-    p <- nrow(multiorder)
-    nbylogp <- floor(numsamples/log(p))
-    select  <- ifelse(1:nrow(multiorder) <= nbylogp, 1, 0)
-  }
+  # Find the first order lagged differences
+  difforder <- -(diff(multiorder$rescale, 1))
+  # Find the index corresponding to the maximum lagged difference
+  maxdiffindex <- which(max(difforder) == difforder)[1]
+  # Build a vector of 1s and 0s. 1s: Selected variables, 0s. Variables not selected.
+  select <- ifelse(1:nrow(multiorder) <= maxdiffindex, 1, 0)
   names(select) <- multiorder$variable
   select <- select[multicol$variable]
   selectedvars <- multicol$variable[which(select==1)]
@@ -135,11 +127,12 @@ mysamplemulti <- function(multivalue, minval, do=T){
 ###### III. Read in results of simulations ######
 allrds <- list.files(path=workdir, pattern=".*\\d{1,}\\.rds", full.names=T)
 
-##### IV. Harvest simulation results #####
+###### IV. Harvest all the simulation results ######
 # debug
 # rdsfile <- allrds[1]
 # model <- "lr"
-simulationresults <- mclapply(allrds, function(rdsfile){
+simulationresults <- lapply(allrds, function(rdsfile){
+  print(sprintf("loading:%s",rdsfile))
   snr <- gsub(".*(16\\.00|25|4\\.60)_0.*rds$", "\\1", rdsfile)
   cutoff <- gsub(".*_(0.0\\d)_(\\d*).*.rds", "\\1", rdsfile)
   simulnum <- gsub(".*_(\\d*).*.rds", "\\1", rdsfile)
@@ -149,12 +142,18 @@ simulationresults <- mclapply(allrds, function(rdsfile){
   ## Gather up inclusion probabilities for all variables
   # model <- "bma"
   modelprob <- sapply(names(rdslist$inclprobs), function(model){
-    modelip <- data.table(ldply(rdslist$inclprobs[[model]]))
-    setnames(modelip, colnames(modelip), c("variables", "ipval"))
-    modelip[,variables:=gsub("^xscaled", "", variables),]
-    modelip[,model:=model,]
-    return(modelip)
+  # catch corner cases where simulations didn't produce any output
+    if (length(rdslist$inclprobs[[model]])==0) {
+      return(list())
+    } else {
+      modelip <- data.table(ldply(rdslist$inclprobs[[model]]))
+      setnames(modelip, colnames(modelip), c("variables", "ipval"))
+      modelip[,variables:=gsub("^xscaled", "", variables),]
+      modelip[,model:=model,]
+      return(modelip)
+    }
   },simplify=F)
+  
   # Extract selected vars for enc, ps and pr (methods with no inclusion probabilities)
   # Evaluate model performance by comparing selected vars against the true vars
   #db 
@@ -173,10 +172,11 @@ simulationresults <- mclapply(allrds, function(rdsfile){
   ipvals <- ipvalues[,`:=`(snr=snr, cutoff=cutoff, simulnum=simulnum, onesunif=onesunif), ]
   evals <- evalply[,`:=`(snr=snr, cutoff=cutoff, simulnum=simulnum, onesunif=onesunif), ]
   return(list(eval=evalply, ip=ipvals)) 
-},mc.cores=8)
+})
+
 saveRDS(simulationresults, "simulationresults.rds")
 
-##### Combine all simulation results #####
+###### V. Combine all the simulation results ######
 # simulationresults <- readRDS("simulationresults.rds")
 # type <- "ip"
 combineandsample <- sapply(c("ip", "eval"), function(type){
@@ -187,12 +187,12 @@ combineandsample <- sapply(c("ip", "eval"), function(type){
   if (type == "eval"){
     setnames(bindup, colnames(bindup)[1], "model")
     lengthsubset <- bindup[,list(lenval=length(FPR)),by=c("model", "snr", "cutoff", "onesunif")]
-    } else {
-    # rescale the inclusion probabilities from 0 to 1 for each combination of model, snr, cutoff, simulnum and one/unif
-    # for the stability models, IPs range from 0 to 100, because IPs are summed over all lambdas. However, for
-    # all the other models that calculate the stability based on 1 lambda or are BMA, IPs are between 0 and 1.
-    # Rescaling everything between 0 and 1 reconciles these two.
-    bindpre <- bindup[ ,rescale:=genrescale(value=ipval), by=c("model", "snr", "cutoff", "simulnum", "onesunif")] 
+  } else {
+    # Remove the intercept
+    bindup <- bindup[variables!="(Intercept)",]
+    # For the stability models, IPs range from 0 to 100, because IPs are summed over all lambdas.
+    # Divide these stability values by 100
+    bindpre <- bindup[,rescale:=ifelse(grepl("ss|sr", model), ipval/100, ipval),]
     nonzero <- setdiff(bindpre$rescale, 0)
     grandmin <- min(nonzero)
     # Sequence of thresholds equally spaced on the logscale
@@ -204,26 +204,31 @@ combineandsample <- sapply(c("ip", "eval"), function(type){
     colnames(qxmat) <- names(qx)
     bindqx <- cbind(bindpre, qxmat)
     colinterest <- c("variables", grep("^q", colnames(bindqx), value=T), "rescale")
-    bindup <- bindqx[ ,genthreshold(.SD), by=c("model", "snr", "cutoff", "simulnum", "onesunif"), .SDcols=colinterest]  
+    rocdata <- bindqx[ ,genthreshold(.SD), by=c("model", "snr", "cutoff", "simulnum", "onesunif"), .SDcols=colinterest]  
     # Save this as an RDS just in case the simulation is massive and you need the results in a jiffy.
-    saveRDS(bindup, "rocdata.rds")
-    #Reads the saved file
-    #bindup <- readRDS("rocdata.rds")
-    lengthsubset <- bindup[,list(lenval=length(auc)),by=c("model", "snr", "cutoff", "onesunif")]
+    saveRDS(rocdata, "rocdata.rds")
+    # Reads the partial results 
+    # rocdata <- readRDS("rocdata.rds")
+    lengthsubset <- rocdata[,list(lenval=length(auc)),by=c("model", "snr", "cutoff", "onesunif")]
     corcol <- c("variables", "rescale")
     bindunif <- bindpre[onesunif=="unif"]
-    bindcor <- bindunif[,list(scor=rankcorrelate(.SD)$scor), by=c("model", "snr", "cutoff", "simulnum"), .SDcols=corcol]  
+    bindcor <- bindunif[,list(scor=rankcorrelate(.SD)$scor), by=c("model", "snr", "cutoff", "simulnum"), .SDcols=corcol]
+    # Save partial results 
+    saveRDS(bindcor, "bindcor.RDS")
+    # Reads the partial results
+    # bindcor <- readRDS("bindcor.RDS")
     # bindpre consists of all simulations; unifs and ones
-    selectld <- bindpre[,selectionvector(.SD, method="ld"), by=c("model", "snr", "cutoff", "simulnum", "onesunif"), .SDcols=corcol]
-    selectnbylogp <- bindpre[,selectionvector(.SD, method="nbylogp"), by=c("model", "snr", "cutoff", "simulnum", "onesunif"), .SDcols=corcol]
+    selectld <- bindpre[,selectionvector(.SD), by=c("model", "snr", "cutoff", "simulnum", "onesunif"), .SDcols=corcol]
+    # Rename rocdata as bindup because the eval branch has bindup
+    bindup <- rocdata
   }
-  # minimum number of simulations available for any set of conditions.
+  # determine minimum number of simulations available for a set of conditions.
   minnumsample <- min(lengthsubset$lenval)
   sdcols <- setdiff(colnames(bindup), c("simulnum","model", "snr", "cutoff", "onesunif"))
   
   # From each set of conditions (model, snr, cutoff, onesunif), 
-  # sample a minimum of "minnumsample" simulations without replacement 
-  # This is so that every set of conditions has the same number of simulations.
+  # sample the minimum of "minnumsample" simulations without replacement 
+  # This is to make sure that every set of conditions has the same number of simulations.
   sampledrows <- bindup[,mysamplemulti(.SD, minval=minnumsample, do=T), 
                         by=c("model", "snr", "cutoff", "onesunif"), .SDcols=sdcols]
   if (type == "eval"){
@@ -233,39 +238,32 @@ combineandsample <- sapply(c("ip", "eval"), function(type){
     sampledld <- selectld[,mysamplemulti(.SD, minval=minnumsample, do=T), 
                                  by=c("model", "snr", "cutoff", "onesunif"), 
                                  .SDcols=c("FPR", "TPR", "FSCORE", "PRECISION", "RECALL")]
-    samplednbylogp <- selectnbylogp[,mysamplemulti(.SD, minval=minnumsample, do=T), 
-                                 by=c("model", "snr", "cutoff", "onesunif"), 
-                                 .SDcols=c("FPR", "TPR", "FSCORE", "PRECISION", "RECALL")]
-    return(list(ip=sampledrows, cor=sampledcorr, selectld=sampledld, selectnlp=samplednbylogp))
+    return(list(ip=sampledrows, cor=sampledcorr, selectld=sampledld))
   }
 },simplify=F)
 
 # Ignore this warning.
 # Warning messages:
 # In ifelse(grepl("(p|m)", varname), as.numeric(gsub(".*[mp](\\d{1,}$)",  ... :
-#                                                           NAs introduced by coercion
+# NAs introduced by coercion
+
+# Save partial results
 saveRDS(combineandsample, "combinesample.rds")
 
-############Read in sampled data##############
-# just in case you are picking up analysis after a break.
+# Read in partial results in case you are picking up analysis after a break.
 # combineandsample  <- readRDS("./combinesample.rds")
 
 
-####### V. Get ROC data corresponding to the median AUC #######
+###### VI. Get ROC data corresponding to the median AUC ######
 # The ROC curve for a binary classification problem plots 
 # the true positive rate as a function of the false positive rate. 
 # The points of the curve are obtained by sweeping the 
-# classification threshold from the most positive classification 
-# value to the most negative. 
+# inclusion probability threshold from 100% to 0%. 
 
 inclprob <- combineandsample$ip$ip
 # calculate mean tpr, fpr, auc and tau for each set of conditions
 tprfprtauauc <- grep("tpr|fpr|tau|auc", colnames(inclprob), ignore.case=T, value=T)
 meantprfpr <- inclprob[,lapply(.SD, mean), by=list(model, snr, cutoff, onesunif), .SDcols=tprfprtauauc]
-
-# calculate median of auc from big dataset for each combination of things in by below:
-aucmedian <- inclprob[,list(aucmed=round(median(auc), 2)), by=list(model, snr, cutoff, onesunif)]
-auc_cols <- colnames(aucmedian)
 tprfprtau <- grep("TPR|FPR|tau", colnames(inclprob), value=T)
 
 meltrocdata <- function(datasub){
@@ -280,7 +278,7 @@ meltrocdata <- function(datasub){
 }
 rocmean <- rbindlist(meltrocdata(meantprfpr))
 
-#########VI. General graphing code #############
+#########VII. General graphing code #############
 ## colours: colours for each variant ##
 newcolours <- c("#d73027" , "#f46d43", "#e08214", "#66bd63", "#1a9850", "#1d91c0", "#225ea8","#c2a5cf", "#9970ab","#dd3497", "#ae017e")
 names(newcolours) <- c("BMA", "BMAC", "ENC", "LR", "LRC", "LS", "LSC", "PR", "PS", "SR", "SS")
@@ -303,13 +301,18 @@ plotlayers <-function(plottingdata, ymetric, ggp){
   return(p)
 }
 
+rocfin <- datasub
 prepdata <- function(rocfin, oneorunif){
   if (oneorunif != "") {
     rocfin <- rocfin[onesunif==oneorunif,]
   }
-  rocfin[,snrname:=ifelse(grepl("16", snr), "SNR:16.0",
-                          ifelse(grepl("25", snr), "SNR:0.25",
-                                 ifelse(grepl("4.6", snr), "SNR:04.6", "undefined")))]
+  getsnrname <- function(snrval){
+    newsnr <- ifelse(grepl("16", snrval), "SNR:16.0",
+                     ifelse(grepl("25", snrval), "SNR:0.25",
+                            ifelse(grepl("4.6", snrval), "SNR:04.6", "undefined")))
+    return(newsnr)
+  }
+  rocfin[,snrname:=getsnrname(snr),]
   rocfin[,model:=toupper(model),]
   rocfin[,modelnum:=getmodelnum(rocfin),]
   return(rocfin)
@@ -325,12 +328,13 @@ stripnum <- function(value){
   value <- gsub("\\d{2}:", "", value)
   return(value)
 }
-##########VII. Plot ROC curve##############
 
-#db
-#what <- "mean"
-#oneunif <- "unif"
-##Make extra columns for labels for graphs##
+##########VIII. Plot ROC curves and AUC boxplots ##############
+
+# what <- "mean"
+# oneunif <- "unif"
+
+## Make extra columns for labels for graphs ##
 findata <- sapply(list(rocmean, inclprob), function(datasub){
   sapply(unique(datasub$onesunif), function(type){
     fin <- prepdata(datasub, type)
@@ -338,59 +342,36 @@ findata <- sapply(list(rocmean, inclprob), function(datasub){
 },simplify=F)
 names(findata) <- c("mean", "all")
 
+## Plot ROC curves ##
 plotroc <- function(what, oneunif){
   rocfin <- findata[[what]][[oneunif]]
   ggp <- ggplot(rocfin, aes(x=FPR, y=TPR, colour=model))
   ggp <- ggp + geom_abline(aes(intercept=0, slope=1), linetype="dashed")
   ggp <- ggp + geom_path()
   p <- plotlayers(plottingdata=rocfin, ymetric="", ggp=ggp)
-  # Adjust coordinates of the legend to occupy an empty space in the graph
-  p <- p + theme(legend.justification=c(0,0), legend.position=c(0.85,-0.025))
-  p <- p + theme(legend.background=element_rect(fill = "transparent"))
   p <- p + xlab("False Positive Rate") + ylab("True Positive Rate")
   p <- p + labs(colour="Approaches")
   p <- p + scale_color_manual(values=newcolours)
   p <- p + scale_x_continuous(breaks=c(0, 0.5, 1), labels=c(0, 0.5, 1), limits=c(0,1))
   p <- p + scale_y_continuous(breaks=c(0, 0.5, 1), labels=c(0, 0.5, 1), limits=c(0,1))
+  p <- p + guides(colour = guide_legend(override.aes = list(size=3)))
   ggsave(sprintf("ROC_%s_%s.pdf", what, oneunif), plot=p, width=9, height=6.5, units="in", limitsize=F)
 }
 
 # FINAL PLOTS
-# Reference: Receiver Operating Characeristics (ROC curves): Figure 2/3 
+# Receiver Operating Characeristics (ROC curves): Figure 2a and Figure 2b 
 plotroc(what="mean", oneunif="ones")
 plotroc(what="mean", oneunif="unif")
 
 
 #db
-#oneunif <- "unif"
-plotauc <- function(oneunif){
-  datasub <- prepdata(aucmedian, oneorunif=oneunif)
-  ggp <- ggplot(datasub, aes(x=modelnum, y=aucmed, fill=model))
-  ggp <- ggp + geom_bar(stat="identity")
-  p <- plotlayers(plottingdata=datasub, ymetric="AUC", ggp=ggp)
-  #p <- p + theme(legend.justification=c(0,0), legend.position=c(0,0))
-  p <- p + theme(legend.background=element_rect(fill = "transparent"))
-  p <- p + labs(fill="Approaches")
-  p <- p + scale_fill_manual(values=newcolours)
-  p <- p + scale_y_continuous(breaks=c(0, 0.5, 1), labels=c(0, 0.5, 1), limits=c(0,1))
-  p <- p + theme(axis.text.x = element_text(size=10, angle = 290, hjust = 0, colour="black"))
-  p <- p + scale_x_discrete(label=stripnum)
-  ggsave(sprintf("AUC_%s.pdf", oneunif), plot=p, width=9, height=6.5, units="in", limitsize=F)
-}
-
-# FINAL PLOTS
-# Reference: Area under the ROC curves (median AUC) : Figure 4/5 
-plotauc(oneunif="unif")
-plotauc(oneunif="ones")
-
-
+# oneunif <- "unif"
+## Plot AUC boxplots ##
 plotaucbox <- function(oneunif){
   rocfin <- findata$all[[oneunif]]
   ggp <- ggplot(rocfin, aes(x=modelnum, y=auc, fill=model))
-  ggp <- ggp + geom_boxplot()
+  ggp <- ggp + geom_boxplot(outlier.size=1, fatten=0.5)
   p <- plotlayers(plottingdata=rocfin, ymetric="AUC", ggp=ggp)
-  #p <- p + theme(legend.justification=c(0,0), legend.position=c(0,0))
-  p <- p + theme(legend.background=element_rect(fill = "transparent"))
   p <- p + labs(fill="Approaches")
   p <- p + scale_fill_manual(values=newcolours)
   p <- p + scale_y_continuous(breaks=c(0, 0.5, 1), labels=c(0, 0.5, 1), limits=c(0,1))
@@ -399,74 +380,62 @@ plotaucbox <- function(oneunif){
   ggsave(sprintf("AUC_boxplot_%s.pdf", oneunif), plot=p, width=9, height=6.5, units="in", limitsize=F)
 }
 # FINAL PLOTS
-# Reference: Variability in AUC: Figure 6
+# Variability in AUC: Figure 3a and Figure 3b
 plotaucbox("unif")
 plotaucbox("ones")
 
-#######VIII. Plots other than ROC#########
+###### IX. Plot FSCORE across the approaches ######
+
+## Get data for plotting from combineandsample ##
 allbeta <-combineandsample$eval
 allldselect <- combineandsample$ip$selectld
-allnlpselect <- combineandsample$ip$selectnlp
-allcorr <-  combineandsample$ip$cor
+vardata <- list(noip=allbeta, yesip=allldselect)
 
-sdcols <- setdiff(colnames(allbeta), c("simulnum","model", "snr", "cutoff", "onesunif"))
-mymedian <- function(x){median(x, na.rm=T)}
-evalmedian <- allbeta[,lapply(.SD, mymedian), by=c("model", "snr", "cutoff", "onesunif"), .SDcols=sdcols]
-evalmedian[,method:="MODEL",]
-#method of lagged differences
-selectldmedian <- allldselect[,lapply(.SD, mymedian), by=c("model", "snr", "cutoff", "onesunif"), .SDcols=sdcols]
-#method: n/log(p)
-selectnlpmedian <- allnlpselect[,lapply(.SD, mymedian), by=c("model", "snr", "cutoff", "onesunif"), .SDcols=sdcols]
-selectldmedian[,method:="LD",]
-selectnlpmedian[,method:="NLP",]
-selectmedian <- rbind(selectldmedian, selectnlpmedian)
-cormedian <- allcorr[,lapply(.SD, mymedian), by=c("model", "snr", "cutoff"), .SDcols="scor"]
-
-
-## New columns for plotting ##
-mmdata <- list(emed=evalmedian, smed=selectmedian)
-mmdata_ones <- sapply(mmdata, function(datasub){
+vardata_ones <- sapply(vardata, function(datasub){
   pdata <- prepdata(rocfin=datasub, oneorunif="ones")
   return(pdata)
 },simplify=F)
-mmdata_unifs <- sapply(mmdata, function(datasub){
+
+vardata_unifs <- sapply(vardata, function(datasub){
   pdata <- prepdata(rocfin=datasub, oneorunif="unif")
   return(pdata)
 },simplify=F)
 
+# debug
+# metric <- "FSCORE"
 
-#db
-#type <- "med"
-#metric <- "FPR"
+## Vector for iterating over beta=+-1 and beta \in \mathcal{U}
 ou <- c("ones", "unifs")
-#onesorunif <- ou[2]
 
-# FINAL PLOTS
-# Reference: FScore: Comparison of Variable Selection Strategies Figure 7-12
+# debug
+# onesorunif <- ou[2]
 sapply(ou, function(onesorunif){
-  x <- "smed" #var selection
-  y <- "emed" #models without IP
-  print(sprintf("mmdata_%s", onesorunif))
-  datasub <- get(sprintf("mmdata_%s", onesorunif)) 
+  x <- "yesip" # methods that give IP rankss
+  y <- "noip"  # methods that do not give IP ranks
+  print(sprintf("vardata_%s", onesorunif))
+  datasub <- get(sprintf("vardata_%s", onesorunif)) 
+  
   mergeddata <- rbind(datasub[[x]], datasub[[y]])
+  
+  # Revised calculation for Fscore
+  mergeddata[,fscore_rev:=ifelse(PRECISION == 0 | RECALL == 0, 0, FSCORE),]
+  
+  # Rename the revised Fscore back
+  mergeddata[,FSCORE:=fscore_rev,]
+  
+  # Melt data 
   mergemelt <- melt(mergeddata, measure.vars=c("FPR", "TPR", "FSCORE", "PRECISION", "RECALL"))
-  #metric <- "FSCORE"
-  twographs <- sapply(c("FPR", "TPR", "FSCORE", "PRECISION", "RECALL"), function(metric){
-    ipdata <- mergemelt[variable==metric & model %in% unique(datasub$smed$model)]   
-    p <- ggplot(ipdata, aes(x=modelnum, y=value, fill=method))
-    p <- p + geom_bar(stat="identity", position="dodge")
-    p <- p + facet_grid(snrname~cutoff, labeller=modifylabel)
-    p <- p + lightertheme
-    p <- p + xlab("Approaches") + ylab(toupper(metric))
-    p <- p + scale_fill_discrete(name="Selection", labels=c("LD", "n/log(p)"))
-    p <- p + scale_x_discrete(labels=stripnum)
-    p <- p + theme(legend.text=element_text(face="italic"))
-    p <- p + theme(axis.text.x = element_text(size=10, angle = 300, hjust = 0, colour = "black"))
-    ggsave(sprintf("LDVSNLP_%s_%s.pdf",metric, onesorunif), width=9, height=6.5, units="in", limitsize=F)
-    
-    allmodels <- mergemelt[grepl("LD|MODEL", method) & variable==metric,]
+  
+  # Eliminate 0.25 SNR
+  mergemelt <- mergemelt[snr!=25]
+  
+  # FINAL PLOTS
+  # Variability in FSCORE: Figure 4a and Figure 4b
+  # Variability in FPR: Figure 5a and Figure 5b
+  sapply(c("FPR", "TPR", "FSCORE", "PRECISION", "RECALL"), function(metric){
+    allmodels <- mergemelt[variable==metric & !is.na(value)]
     p <- ggplot(allmodels, aes(x=modelnum, y=value, fill=model))
-    p <- p + geom_bar(stat="identity")
+    p <- p + geom_boxplot(outlier.size=1, fatten=0.5)
     p <- p + facet_grid(snrname~cutoff, labeller=modifylabel)
     p <- p + scale_fill_manual(values=newcolours)
     p <- p + scale_x_discrete(labels=stripnum)
@@ -474,21 +443,36 @@ sapply(ou, function(onesorunif){
     p <- p + xlab("Approaches") + ylab(toupper(metric))
     p <- p + labs(fill="Approaches")
     p <- p + theme(axis.text.x = element_text(size=10, angle = 300, hjust = 0, colour = "black"))
-    ggsave(sprintf("LDVSMODEL_%s_%s.pdf", metric, onesorunif), plot=p, width=9, height=6.5, units="in", limitsize=F)
+    ggsave(sprintf("VARSELECT_%s_%s.pdf", metric, onesorunif), plot=p, width=9, height=6.5, units="in", limitsize=F)
   },simplify=F)
-  },simplify=F)  
+ },simplify=F)
 
+
+###### X. Plot rank correlation across the approaches ######
+
+## Get data for plotting from combineandsample ##
+allcorr <-  combineandsample$ip$cor
+
+plotcorbox <- function(datasub){
+  ggdata <- prepdata(datasub, oneorunif="")
+  ggdata <- ggdata[snr != 25]
+  ggp <- ggplot(ggdata, aes(x=modelnum, y=scor, fill=model))
+  ggp <- ggp + geom_boxplot(outlier.size=1, fatten=0.5)
+  p <- plotlayers(plottingdata=ggdata, ymetric="Spearman's Rank Correlation", ggp=ggp)
+  p <- p + labs(fill="Approaches")
+  p <- p + scale_fill_manual(values=newcolours)
+  p <- p + theme(axis.text.x = element_text(size=10, angle = 290, hjust = 0, colour="black"))
+  p <- p + theme(axis.title.y = element_text(vjust=1, colour="black"))
+  p <- p + scale_x_discrete(label=stripnum)
+  ggsave("Correlation_boxplot.pdf", plot=p, width=9, height=6.5, units="in", limitsize=F)
+}
 
 # FINAL PLOTS
-# Figure 13 Spearman’s Correlation: Variable Ranking, 
-plotcorbar <- function(datasub){
-  ggdata <- prepdata(datasub, oneorunif="")
-  ggp <- ggplot(ggdata, aes(x=modelnum, y=scor, fill=model))
-  ggp <- ggp + geom_bar(stat="identity")
-  p <- plotlayers(plottingdata=ggdata, ymetric="Spearman's Rank Correlation", ggp=ggp)
-  p <- p + scale_fill_manual(values=newcolours)
-  p <- p + scale_x_discrete(labels=stripnum)
-  p <- p + theme(axis.text.x = element_text(size=10, angle = 300, hjust = 0, colour = "black"))
-  ggsave("SpearmanCorr_VarRanking.pdf", plot=p, width=9, height=6.5, units="in", limitsize=F) 
-}
-plotcorbar(cormedian)
+# Variability in Rank Correlation: Figure 6
+plotcorbox(combineandsample$ip$cor)
+
+# You can safely ignore the warning message below.
+# An explanation for this warning is here: http://stackoverflow.com/a/20688045
+# Warning message:
+#   In `[.data.table`(rocfin, , `:=`(snrname, getsnrname(snr)), ) :
+#   Invalid .internal.selfref detected and fixed by taking a copy of the whole table so that := can add this new column by reference. At an earlier point, this data.table has been copied by R (or been created manually using structure() or similar). Avoid key<-, names<- and attr<- which in R currently (and oddly) may copy the whole data.table. Use set* syntax instead to avoid copying: ?set, ?setnames and ?setattr. Also, in R<=v3.0.2, list(DT1,DT2) copied the entire DT1 and DT2 (R's list() used to copy named objects); please upgrade to R>v3.0.2 if that is biting. If this message doesn't help, please report to datatable-help so the root cause can be fixed.
