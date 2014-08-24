@@ -301,7 +301,7 @@ plotlayers <-function(plottingdata, ymetric, ggp){
   return(p)
 }
 
-rocfin <- datasub
+
 prepdata <- function(rocfin, oneorunif){
   if (oneorunif != "") {
     rocfin <- rocfin[onesunif==oneorunif,]
@@ -355,6 +355,7 @@ plotroc <- function(what, oneunif){
   p <- p + scale_x_continuous(breaks=c(0, 0.5, 1), labels=c(0, 0.5, 1), limits=c(0,1))
   p <- p + scale_y_continuous(breaks=c(0, 0.5, 1), labels=c(0, 0.5, 1), limits=c(0,1))
   p <- p + guides(colour = guide_legend(override.aes = list(size=3)))
+  p <- p + ggtitle("Receiver Operating Characteristic (ROC) Curves")
   ggsave(sprintf("ROC_%s_%s.pdf", what, oneunif), plot=p, width=9, height=6.5, units="in", limitsize=F)
 }
 
@@ -377,6 +378,7 @@ plotaucbox <- function(oneunif){
   p <- p + scale_y_continuous(breaks=c(0, 0.5, 1), labels=c(0, 0.5, 1), limits=c(0,1))
   p <- p + theme(axis.text.x = element_text(size=10, angle = 290, hjust = 0, colour="black"))
   p <- p + scale_x_discrete(label=stripnum)
+  p <- p + ggtitle("Area Under the ROC Curve (AUC)")
   ggsave(sprintf("AUC_boxplot_%s.pdf", oneunif), plot=p, width=9, height=6.5, units="in", limitsize=F)
 }
 # FINAL PLOTS
@@ -443,6 +445,7 @@ sapply(ou, function(onesorunif){
     p <- p + xlab("Approaches") + ylab(toupper(metric))
     p <- p + labs(fill="Approaches")
     p <- p + theme(axis.text.x = element_text(size=10, angle = 300, hjust = 0, colour = "black"))
+    p <- p + ggtitle(paste(sprintf("%s: Variable selection across the 11 approaches", metric))
     ggsave(sprintf("VARSELECT_%s_%s.pdf", metric, onesorunif), plot=p, width=9, height=6.5, units="in", limitsize=F)
   },simplify=F)
  },simplify=F)
@@ -464,6 +467,7 @@ plotcorbox <- function(datasub){
   p <- p + theme(axis.text.x = element_text(size=10, angle = 290, hjust = 0, colour="black"))
   p <- p + theme(axis.title.y = element_text(vjust=1, colour="black"))
   p <- p + scale_x_discrete(label=stripnum)
+  p <- p + ggtitle("Spearman’s Correlation: Variable Ranking")
   ggsave("Correlation_boxplot.pdf", plot=p, width=9, height=6.5, units="in", limitsize=F)
 }
 

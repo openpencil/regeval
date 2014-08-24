@@ -174,6 +174,7 @@ rankdistribution <- function(){
   p <- p + scale_x_continuous(breaks=c(1, seq(25, max(datasub$num), by=25)), 
                                 labels=c(1, seq(25, max(datasub$num), by=25)))
   p <- p + lightertheme
+  p <- p + ggtitle("Inclusion Probability Profiles")
   ggsave("IP_rank_distribution.pdf", plot=p, width=6.7, height=3.7, units="in", limitsize=F)
 }
 
@@ -307,6 +308,7 @@ comparevarselections <- function(){
   p <- p + xlab("") + ylab("")
   p <- p + geom_text(data = mergeddt,
                      aes(label = modellab), y = ncol(ggorder)-1, size = 3.5, fontface="bold")
+  p <- p + ggtitle("Influential variables selected across the 11 approaches")
   calcheight <- 0.28 * (numvar+1)
   ggsave("ALLMODELS_selectedvarscomparison.pdf", plot=p, width=8, height=calcheight, units="in", limitsize=F)
   }
