@@ -9,14 +9,14 @@ The files regeval_simulation.R and regeval_analysis.R are the entry points for t
 Please step-through the code and comments within these scripts for detailed instructions. 
  
 ### Additional files in the repository include:
-| File       | Description  |
-|:----------|:-----------------|
-|example_dataset.rda    | An example design matrix     |
-|example_response.rda | An example response vector|
-|regeval_packages.R| Installs all packages needed for the evaluation and loads the libraries |
-|regeval_algorithms.R | All the regression algorithms used in the evaluation. |
-|regeval_simulation.R| Implementation of the simulation design and evaluation for a systematic comparison|
-|regeval_graphing.R| Graphing routines for data generated from evaluation. |
-|regeval_analysis.R | Application of the algorithms on the example data + Comparison of findings |
-|regeval_colorlegend.R | Corrplot color legend |
-|regeval_corrplot.R| Slightly modified corrplot code |
+| File       | Description  | Type |
+|:----------|:-----------------|:----|
+|example_dataset.rda    | An example design matrix| Data |
+|example_response.rda | An example response vector| Data |
+|regeval_packages.R| Installs all packages needed for the evaluation and loads the libraries | Libraries |
+|regeval_algorithms.R | All the regression algorithms used in the evaluation. | Functions |
+|regeval_simulation.R| Implementation of the simulation design and evaluation for a systematic comparison| Simulation |
+|regeval_graphing.R| Graphing routines for data generated from evaluation. | Evaluation + Visualization |
+|regeval_analysis.R | Application of the algorithms on the example data + Comparison of findings | Analysis + Visualization|
+|regeval_colorlegend.R | Corrplot color legend | Visualization |
+|regeval_corrplot.R| Slightly modified corrplot code |  Visualization |
