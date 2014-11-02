@@ -17,17 +17,17 @@ registerDoMC(cores=numcore)
 
 ##### Generate path matrix #####
 #debug
-# x <- x
-# y <- y 
 # subsamples <- 104 (Has to be a multiple of the number of cores. Traditionally, 100, but this does not work if we have for instance, 8 cores.)
-# alpha <- best_cv_parameter
+# alphaval <- best_cv_parameter
 # randomize=T
 # NOTE: this code works only for continuous outcomes!!! 
+# x <- xscaled
+
 mystability_glmnet <- function(x,
                                y,
                                lambdaseq,
                                subsamples  = 100,
-                               alpha=0,
+                               alphaval=0,
                                mystandardize=T,
                                bolasso=F,
                                randomize=T,
@@ -70,12 +70,12 @@ mystability_glmnet <- function(x,
   # s <- 2
   bloc.stability <- function(subsets) {
     # Matrix produces a sparse matrix
-    select <- Matrix(0,nlambda1,p)
+    select <- Matrix(0,nlambda1,p+1)
     subsamples.ok <- 0
     if (setseed == T){
       set.seed(101)
     }
-    for (s in 1:length(subsets)) {
+    activebetas <- sapply(1:length(subsets), function(s){
       # print(s)
       if (randomize) { 
         current_penscale <- penscale / runif(p,weakness,1)
@@ -86,27 +86,34 @@ mystability_glmnet <- function(x,
       x1=x[folds[[subsets[s]]], ]
       y1=y[folds[[subsets[s]]]]
       # family = "gaussian" for continuous outcomes
-      model <- glmnet(x=x1, y=y1, family="gaussian",standardize=mystandardize, alpha=alpha, 
+      model <- glmnet(x=x1, y=y1, family="gaussian",standardize=mystandardize, alpha=alphaval, 
                       nlambda=nlambda1, lambda=lambdaseq, penalty.factor=current_penscale)
       
-      beta <- model$beta
+      beta <- coef(model)
       # find which betas are non-zero
       # some corner cases lead to models failing. Possibly some singularity problem (determinants are zero)
       active <- apply(beta, 1, function(value) { value != 0 })
-      #dim(active) 100 X p: Each cell is boolean. Tells us whether the variable was selected at a particular value of lambda
-      # if there are nlambda rows in the active matrix
-      if (nrow(active) == nlambda1) {
-        subsamples.ok <- subsamples.ok + 1
-        select <- select + active
-      }
-    }
+      return(active)
+    }, simplify=F)
+    
+    
     # if glmnet stops before generating betas for 100 values of lambda, subsample.ok is not incremented and these short ones are tossed.
-    # select is a 100 X p matrix. if a variable is active in every subsample, select will keep adding this variable across the active matrices.
+    # select is a 100 X p matrix. if a variable is active in every subsample, 
+    # select will keep adding this variable across the active matrices.
     # this is aggregation across sub-samples.
     # length(subsamples.ok) = number of contrasts
     # length(subsets) --> number of splits of the 144 subsamples across the 8 cores = 144/8 = 18
     # subsamples.ok = vector of the number of splits that have a contrast  
     # print(subsamples.ok/length(subsets))    
+    # dim(active) 100 X p: Each cell is boolean. Tells us whether the variable was selected at a particular value of lambda
+    # if there are nlambda rows in the active matrix, aggregate the matrix else go to the next active matrix 
+    # which has a complete set of nlambda1 rows
+    for(s in 1:length(activebetas)){
+      if (nrow(activebetas[[s]]) == nlambda1) {
+        subsamples.ok <- subsamples.ok + 1
+        select <- select + activebetas[[s]]
+      }
+    }
 
     if (subsamples.ok < 0.5*length(subsets)) {
       cat("\nWarning: more than 50% of the subsamples were discarded 
@@ -131,11 +138,12 @@ mystability_glmnet <- function(x,
   # number in a cell = selection probability. % of subsamples where the variable was selected.
   # values in each path cell are frequency of any variable being selected in 104 (number of subsamples) trials for a given lambda.
   # this is adding the contributions across the 8 cores.
-  path <- Matrix(0,nlambda1,p)
+  path <- Matrix(0,nlambda1,p+1)
   for (b in 1:length(prob.bloc)) {
     path <- path + prob.bloc[[b]]
   }
-  return(path)
+  pathnew <- as.matrix(path)
+  return(pathnew)
 }
 
 #####II.  Run elastic net double crossvalidation of alpha and lambda #####
@@ -214,10 +222,10 @@ elasticnet_cv <- function(x, y, standardize_cv, lambdaseq) {
   if (best_alpha_index != 0) {
     # print the lassomodel at the best_alpha_index
     lasso_model <- lassomodels[[best_alpha_index]]
-    alpha <- alphas[best_alpha_index]
+    alphaval <- alphas[best_alpha_index]
     # Use lambda which gives the lowest cross validated error
     lambda <- lasso_model$lambda.min
-    out <- list(lasso_model, alpha, lambda)
+    out <- list(lasso_model, alphaval, lambda)
   }
   names(out) <- c("glmnetmodel", "alpha", "lambda")
   return(out)
@@ -235,11 +243,12 @@ elasticnet_cv <- function(x, y, standardize_cv, lambdaseq) {
 # setseed <- F 
 # lambdaseq <- lambdaseq
 # bolasso <- F
+# modality <- "stability"
+# weightedlambda <- T
 
 elastic_net_stability <- function(x, y, mystandardize, cv_parameter=-1,
-                                       mode="stability", setseed=T, lambdaseq=NULL, 
-                                       bolasso=F) {
-
+                                       modality="stability", setseed=T, lambdaseq=NULL, 
+                                       bolasso=F, weightedlambda=F) {
   # Removing zero columns silences the error on quadrupen's implementation of elastic net.
   zero_indicator_boolean_matrix <- (x==0)
   zero_columns <- which(colSums(zero_indicator_boolean_matrix) == nrow(x))
@@ -267,27 +276,50 @@ elastic_net_stability <- function(x, y, mystandardize, cv_parameter=-1,
   p <- dim(x)[2]
   # floor of 5.3 is 5. Min of 5.3, 5 is 5
   num_variables <- min(floor(n/log(p)),p)
+  
+  #debug
+  #alphaval <- best_cv_parameter
   # mystability uses either glmnet or quadrupen based on values of useglmnet
-   path  <- mystability_glmnet(x,y, subsamples=104,
-                               alpha = best_cv_parameter,
-                               mystandardize=mystandardize, setseed=setseed, 
-                               lambdaseq=lambdaseq, bolasso=bolasso)
-  # Rows are the models
-  # Columns are the taxa
-  # colsums - sum of the stability probabilities across a 100 models down each column. Each model is indexed by 1 lambda value.
-  if (mode == "stability") {
-    score <- colSums(path)
+  path  <- mystability_glmnet(x,y, subsamples=104,
+                              alphaval = best_cv_parameter,
+                              mystandardize=mystandardize, setseed=setseed, 
+                              lambdaseq=lambdaseq, bolasso=bolasso)
+  
+  
+  if (modality == "stability") {
+    # Incorporating Reviewer #2 suggestions
+    if (weightedlambda == T) {
+        weightedlambda <- rowMeans(path)
+        weightedlambdanorm <- weightedlambda/sum(weightedlambda)
+        # Rows are the models
+        # Columns are the taxa
+        # colSums - sum of the stability probabilities across a 100 models down each column. Each model is indexed by 1 lambda value.
+        weightit <- sapply(1:ncol(path), function(pcol){
+          weightedrow <- weightedlambdanorm*path[,pcol]
+          return(weightedrow)
+          ##### Quick plot for visualizing how weights are distributed across lambda grid######
+          # ggframe <- data.frame(lambda=c(1:100), weights=weightedlambdanorm)
+          # p <- ggplot(ggframe, aes(x=lambda, y=weights))
+          # p <- p + geom_point()
+          # p <- p + lightertheme
+          # ggsave(filename = "weightedlambda.pdf", plot = p,width =4, height = 3, units = "in", limitsize = F )  
+        })
+        score <- colSums(weightit)
+        
+      } else {
+        score <- colSums(path)
+      }
     # columns of x are names of taxa.
-    names(score) <- colnames(x)
+    names(score) <- colnames(path)
     # Sort the stability scores
     score <- sort(score, decreasing=T)
     out <- list(best_l1_parameter, best_cv_parameter, score, x, y)
     names(out) <- c("lambda", "alpha", "stability", "xmatrix", "ymatrix")
-  } else if (mode == "pfer") {
+  } else if (modality == "pfer") {
     select <- pfer_select(path)
     out <- list(best_l1_parameter, best_cv_parameter, select, x, y)
     names(out) <- c("lambda", "alpha", "pferselect", "xmatrix", "ymatrix")
-  } else if (mode == "path") {
+  } else if (modality == "path") {
     # output path probs
     out <- list(best_l1_parameter, best_cv_parameter, path, x, y)
     names(out) <- c("lambda", "alpha", "path", "xmatrix", "ymatrix")
@@ -357,22 +389,68 @@ return(selected)
 }
 
 #####IV. BMA models #####
-runspike <- function(expected_model_size, y, x, iterations=10000){
-  spikesmodel <- lm.spike(y ~ x, niter=iterations, expected.model.size=expected_model_size)
-  spikesummary <- summary(spikesmodel, burn=round(0.1*iterations, 0))
-  betas <- spikesummary$coefficients[,"mean"]
-  names(betas) <- gsub("xscaled", "", names(betas))
-  betindices <- grep("intercept", names(betas), invert=T, ignore.case=T)
-  betas <- betas[betindices]
-  inclprob <- spikesummary$coefficients[betindices,"inc.prob"]
-  return(list(betas=betas, inclprob=inclprob))
+# expected_model_size <- bestmodelsize_bmac
+# iterations <- 100
+# y <- ydata
+# x <- xdata
+# defaultmode <- "logistic"
+# iterations <- 10000
+# expected_model_size <- 1
+##### a. BMA models for regeval #####
+runspike <- function(expected_model_size, y, x, iterations=10000, defaultmode="gaussian"){
+  if (typeof(y) == "character"){
+    y <- as.integer(as.factor(y))-1
+  }
+  if (defaultmode == "gaussian"){
+    spikesmodel <- lm.spike(y ~ x, niter=iterations, expected.model.size=expected_model_size)
+    spikesummary <- summary(spikesmodel, burn=round(0.1*iterations, 0))
+    betas <- spikesummary$coefficients[,"mean"]
+    inclprob <- spikesummary$coefficients[,"inc.prob"]
+  } else if (defaultmode == "logistic"){
+    x <- as.matrix(x)
+    spikesmodel <- logit.spike(y ~ x, niter=iterations, expected.model.size=expected_model_size)
+    spikesummary <- summary(spikesmodel, burn=round(0.1*iterations, 0))
+    betas <- spikesummary[, "mean"]
+    inclprob <- spikesummary[,"inc.prob"]
+  }
+  names(betas) <- gsub("xscaled|x", "", names(betas))
+  #betindices <- grep("intercept", names(betas), invert=T, ignore.case=T)
+  #betas <- betas[betindices]
+  return(list(betas=betas, inclprob=inclprob, model=spikesmodel))
 }
+
+##### b. BMA models for bayesianmice #####
+# defaultmode <- "logistic"
+runbmac <- function(x, y, defaultmode="gaussian", modelsizearray=c(1, 3, 7, 10)){
+  if (nrow(x) < 25) {
+    folds<- 3 
+  } else {
+    folds<- 5
+  }
+  if (length(modelsizearray) > 0){
+  bestmodelsize_bmac <- crossvalidate(x, y, folds=folds, variant="bmac",
+                                      alphaval=-1, lambdaseq=c(), 
+                                      bestlambdaindex=100, seed=101,  iterations=10000, defaultmode, modelsizearray)
+  } else {
+    bestmodelsize_bmac <-1
+  }
+  model_bmac <- runspike(expected_model_size=bestmodelsize_bmac, y=y, x=x, iterations=10000, defaultmode)
+  return(list(ems=bestmodelsize_bmac, model=model_bmac))
+}
+
+
 
 #####V. Crossvalidate for the following models being evaluated ######
 # Variable Selection based on Inclusion Probabilities at a single lambda (LSC, LRC)
 # Bayesian model averaging with Spike-and-Slab regression (BMAC)
-
-crossvalidate <- function(x, y, folds, variant, alphaval, lambdaseq, bestlambdaindex=-1, seed, iterations=10000) {
+# debug
+# folds <- 5
+# variant <- "lrc"
+# bestlambdaindex <- -1
+# x <- xscaled
+# y <- y
+crossvalidate <- function(x, y, folds, variant, alphaval, lambdaseq, 
+                          bestlambdaindex=-1, seed, iterations=10000, defaultmode="gaussian", modelsizearray=c(1, 3, 7, 10)) {
   set.seed(seed)
   
   ### Computing the folds
@@ -403,7 +481,7 @@ crossvalidate <- function(x, y, folds, variant, alphaval, lambdaseq, bestlambdai
                                        y=elementlist$train[,1],
                                        lambdaseq=lambdaseq,
                                        subsamples = 104,
-                                       alpha=alphaval,
+                                       alphaval=alphaval,
                                        mystandardize=F,
                                        bolasso=bolasso, #bootstrap rather than subsampling
                                        randomize=T,
@@ -428,16 +506,19 @@ crossvalidate <- function(x, y, folds, variant, alphaval, lambdaseq, bestlambdai
     ## We have five models on five test tests and five errors
     ## Average these errors.
     ## Leave one out crossvalidation is unstable and non-deterministic with small sample-sizes. So 5-fold crossvalidation here.
+    ## feature <- 70
+    ## x <- 3
     maxrange <- 100
     trainreg <- sapply(1:maxrange, function(feature){
-      sapply(1:5, function(x){
+      sapply(1:folds, function(x){
         if(maxrange == 100){
           topvars <- gettopvar[[x]][,feature]
         }else{
           topvars <- gettopvar[[x]][[feature]]  
         }
         #construct regular regression with topvars for each lambda
-        trainreg <- glmnet(x=testtrain[[x]]$train[,topvars], y=testtrain[[x]]$train[,1],
+        trainreg <- glmnet(x=testtrain[[x]]$train[, grep('ntercept', topvars, value=T, invert=T)], 
+                           y=testtrain[[x]]$train[,1],
                            family="gaussian", alpha=alphaval, standardize=F, lambda=lambdaseq)
       },simplify=F)
     },simplify=F)
@@ -445,14 +526,14 @@ crossvalidate <- function(x, y, folds, variant, alphaval, lambdaseq, bestlambdai
     #exact = when there is no model corresponding to lambda=0 
     # inherentlambda <- 3 # x <- 4 #feature <- 1
     computemse <- sapply(1:maxrange, function(feature){
-      mseval <- sapply(1:5, function(fold){
+      mseval <- sapply(1:folds, function(fold){
         if (maxrange == 100){
           topvars <- gettopvar[[fold]][,feature]
         } else{
           topvars <- gettopvar[[fold]][[feature]]  
         }
         predicttestreg <- predict(object=trainreg[[feature]][[fold]], 
-                                  newx=testtrain[[fold]]$test[,topvars], 
+                                  newx=testtrain[[fold]]$test[,grep('ntercept', topvars, value=T, invert=T)], 
                                   s=0, type="response", exact=F) 
         coeff <- predict(object=trainreg[[feature]][[fold]], s=0, type="coefficients", exact=F) 
         
@@ -467,12 +548,16 @@ crossvalidate <- function(x, y, folds, variant, alphaval, lambdaseq, bestlambdai
     # This is for BMA
     #debug #elementlist <- testtrain[[1]]
     ## Building the model over 4 different model sizes
-    modelsizearray <- c(1, 3, 7, 10)
     train_path <- mclapply(testtrain, function(elementlist){
-      xscaled <-elementlist$train[,-1]
+      xscaled <- elementlist$train[,-1]
       y <-elementlist$train[,1]
       modelout <- mclapply(modelsizearray, function(num_vars){
-        spikesmodel <- lm.spike(y ~ xscaled, niter=iterations, expected.model.size=num_vars)
+        if (defaultmode == "gaussian") {
+          spikesmodel <- lm.spike(y ~ xscaled, niter=iterations, expected.model.size=num_vars)
+        } else if (defaultmode == "logistic"){
+          xscaled <- as.matrix(xscaled)
+          spikesmodel <- logit.spike(y ~ xscaled, niter=iterations, expected.model.size=num_vars)
+        }
         return(spikesmodel)
       },mc.cores=3)
       return(modelout)
@@ -483,17 +568,37 @@ crossvalidate <- function(x, y, folds, variant, alphaval, lambdaseq, bestlambdai
     #fold <- 1
     ## Taking the model parameters, we predict response on the test partition and compute mse. 
     # Average this MSE over the five folds
+    # feature is the expected model size
     computemse <- sapply(1:length(modelsizearray), function(feature){
-      mseval <- sapply(1:5, function(fold){
+      mseval <- sapply(1:folds, function(fold){
         #print(sprintf("fold: %s", fold))
         #print(sprintf("feature:%s", feature))
-        predicttestreg <- predict(object=train_path[[fold]][[feature]],
-                                  newdata=testtrain[[fold]]$test[,-1],
+        if (defaultmode == "gaussian"){
+          #E(y|X)=\beta*X
+          predicttestreg <- predict(object=train_path[[fold]][[feature]],
+                                  newdata=as.matrix(testtrain[[fold]]$test[,-1]),
                                   type="response", burn=round(0.1*iterations, 0)) 
-        
-        medianpred <- apply(predicttestreg, 1, median)
-        y_test <- testtrain[[fold]]$test[,1]
-        mse_test <- mean((y_test - medianpred)^2)
+          medianpred <- apply(predicttestreg, 1, median)
+          y_test <- testtrain[[fold]]$test[,1]
+          mse_test <- mean((y_test - medianpred)^2)
+        } else if (defaultmode == "logistic") {
+          #P(y=1|X)
+          #fold<-1
+          #feature <- 6
+          predicttestreg <- predict(object=train_path[[fold]][[feature]],
+                                    newdata=as.matrix(testtrain[[fold]]$test[,-1]),
+                                    type="prob", burn=round(0.1*iterations, 0)) 
+          medianpred <- apply(predicttestreg, 1, function(x){
+            class1 <- length(which(x>=0.50))
+            class0 <- length(which(x<0.50))
+            # For each sample this will return a 0 or 1
+            voting <- ifelse(class1 >= class0, 1, 0)
+            return(voting)
+          })
+          y_test <- testtrain[[fold]]$test[,1]
+          # this is the error of classification of the categorical outcome
+          mse_test <- length(which(y_test != medianpred))
+        }
         return(mse_test)
       }, simplify=T)
       avgmse <- mean(mseval)
@@ -605,11 +710,19 @@ standardize <- function(x,y,intercept,penscale,zero=.Machine$double.eps,
 }
 
 #####VII. Run all the models #######
-
-runmodels <- function(xscaled, y, seed, iterations, oracle){
+#iterations <- 50
+#oracle <- beta
+runmodels <- function(xscaled, y, seed, iterations, oracle, weightedlambdamodels){
   # number of samples
   n <- nrow(xscaled)
   p <- ncol(xscaled)
+  
+  ###### TRUE BETA #####
+  # "True" beta for evaluation gold-standard
+  oraclebeta <- oracle
+  names(oraclebeta) <- colnames(xscaled)
+  truevars <- names(which(oraclebeta != 0))
+  
   # standard lasso
   # get crossvalidated alpha and lambda
   # no scaling of alpha to start with when we generate the initial sequence of lambda
@@ -646,8 +759,8 @@ runmodels <- function(xscaled, y, seed, iterations, oracle){
   # exact=T re-estimates the coefficients at the specified value of lambda.
   enc_coefficients <- coef(object=model_enc, s=model_glmnet_cv$lambda, exact=F)
   betas_enc <- as.vector(enc_coefficients)
+  # remove the beta of of the intercept term
   names(betas_enc) <- rownames(enc_coefficients)
-  betas_enc <- betas_enc[-1]
   nonzerovars_enc <- names(betas_enc)[which(betas_enc!=0)]
   
   ###### SS #####
@@ -656,13 +769,21 @@ runmodels <- function(xscaled, y, seed, iterations, oracle){
   # stability selection at the lasso CV param
   model_ss <- elastic_net_stability(as.matrix(xscaled) , as.matrix(y), mystandardize=F, 
                                     cv_parameter=updatedalpha, setseed=F, lambdaseq=lambdaseq)
+  model_ssw <- elastic_net_stability(as.matrix(xscaled) , as.matrix(y), mystandardize=F, 
+                                     cv_parameter=updatedalpha, setseed=F, 
+                                     lambdaseq=lambdaseq, weightedlambda = T)
   ## controlling for nefarious conditions which generate NAs
-  sum_ss <- sum(model_ss$stability)
-  if (is.na(sum_ss) || is.nan(sum_ss) || is.infinite(sum_ss)) {
-    evalout <- list()
-    return(evalout)
+  sumcheck <- function(modeldata) {
+    sum_ss <- sum(modeldata$stability)
+    booleancheck <-  (is.na(sum_ss) || is.nan(sum_ss) || is.infinite(sum_ss)) 
+    return(booleancheck)
   }
-  
+  if (sumcheck(model_ss) == T){
+    return(list())
+  }
+  if (sumcheck(model_ssw) == T){
+    return(list())
+  }
   ###### SR #####
   # Variant: SR | Resampling for training sets
   # Equations 7, 8, 9
@@ -670,104 +791,87 @@ runmodels <- function(xscaled, y, seed, iterations, oracle){
   # stability selection with resamples rather than subsamples
   model_sr <- elastic_net_stability(as.matrix(xscaled), as.matrix(y), mystandardize=F, 
                                     cv_parameter=updatedalpha, setseed=F, lambdaseq=lambdaseq, bolasso=T)
+  model_srw <- elastic_net_stability(as.matrix(xscaled), as.matrix(y), mystandardize=F, 
+                                    cv_parameter=updatedalpha, setseed=F, lambdaseq=lambdaseq, bolasso=T, weightedlambda = T)
   ## controlling for nefarious conditions which generate NAs
-  sum_sr <- sum(model_sr$stability)
-  if (is.na(sum_sr) || is.nan(sum_sr) || is.infinite(sum_sr)) {
-    evalout <- list()
-    return(evalout)
+  if (sumcheck(model_sr) == T){
+    return(list())
   }
-  
+  if (sumcheck(model_srw) == T){
+    return(list())
+  }
+
   ###### BMA #####
   # Equations 12, 13, 14, 15 
   # expected_model_size <- 1
-  model_bma <- runspike(expected_model_size=1, y=y, x=xscaled, iterations)
-  
-  ###### BMAC #####
-  # Equations 12, 13, 14, 15 
-  # Tuning the expected.model.size. Expected model size is approximately the number of relevant variables we expect to be important to the response.
-  # This is, at best, a guess. Default (and the most sparse option) is 1.
-  # We tune the expected.model.size with crossvalidation.
-  bestmodelsize_bmac <- crossvalidate(xscaled, y, folds=5, variant="bmac",
+  if (weightedlambdamodels == F){
+    model_bma <- runspike(expected_model_size=1, y=y, x=xscaled, iterations)
+    ###### BMAC #####
+    # Equations 12, 13, 14, 15 
+    # Tuning the expected.model.size. Expected model size is approximately the number of relevant variables we expect to be important to the response.
+    # This is, at best, a guess. Default (and the most sparse option) is 1.
+    # We tune the expected.model.size with crossvalidation.
+    bestmodelsize_bmac <- crossvalidate(xscaled, y, folds=5, variant="bmac",
                                       alphaval=updatedalpha, lambdaseq=lambdaseq, 
                                       bestlambdaindex=lambdaindex_glmnet, seed=seed, iterations)
-  model_bmac <- runspike(expected_model_size=bestmodelsize_bmac, y=y, x=xscaled, iterations)
-  
-  
-  ###### PS #####
-  #Variant: Stability selection minimizing per family error rate  (PS | PR)
-  # {eq:pfer}
-  # \E[FP] \le \frac{1}{2 \pi - 1 } \frac{q^{2}}{p}
-  # where $\E[FP]$ is the expected number of false positives, 
-  # $q$ is the expected number of selected influential variables and 
-  # $\pi \in (\frac{1}{2}, 1)$ is a tuning parameter. 
-  # Based on Equation~\ref{eq:pfer}, they developed an algorithm that computes the optimal set of variables which minimizes the number of false positives,  also known as per-family error rate (PFER).
-  # Variant PS, based on subsamples
-  model_ps <- elastic_net_stability(as.matrix(xscaled) , as.matrix(y), mystandardize=F, 
-                                    cv_parameter=updatedalpha, mode="pfer", setseed=F, lambdaseq=lambdaseq)
-  
-  
-  ###### PR #####
-  # Variant: PR, based on resamples
-  model_pr <- elastic_net_stability(as.matrix(xscaled) , as.matrix(y), mystandardize=F,
-                                    cv_parameter=updatedalpha, mode="pfer", setseed=F, lambdaseq=lambdaseq, bolasso=T)
-  
-  ###### LR #####
-  # Variant: Variable LR Selection based on Inclusion Probabilities at a single lambda (LR) 
-  # randomize: penalization lambda is decreased by random factors
-  model_lr <- mystability_glmnet(xscaled, y, subsamples = 104, alpha=updatedalpha, mystandardize=F,
+    model_bmac <- runspike(expected_model_size=bestmodelsize_bmac, y=y, x=xscaled, iterations)
+    ###### PS #####
+    # Variant: Stability selection minimizing per family error rate  (PS | PR)
+    # {eq:pfer}
+    # \E[FP] \le \frac{1}{2 \pi - 1 } \frac{q^{2}}{p}
+    # where $\E[FP]$ is the expected number of false positives, 
+    # $q$ is the expected number of selected influential variables and 
+    # $\pi \in (\frac{1}{2}, 1)$ is a tuning parameter. 
+    # Based on Equation~\ref{eq:pfer}, they developed an algorithm that computes the optimal set of variables which minimizes the number of false positives,  also known as per-family error rate (PFER).
+    # Variant PS, based on subsamples
+    model_ps <- elastic_net_stability(as.matrix(xscaled) , as.matrix(y), mystandardize=F,
+                                      cv_parameter=updatedalpha, modality="pfer", setseed=F, lambdaseq=lambdaseq)
+    ###### PR #####
+    # Variant: PR, based on resamples
+    model_pr <- elastic_net_stability(as.matrix(xscaled) , as.matrix(y), mystandardize=F,
+                                    cv_parameter=updatedalpha, modality="pfer", setseed=F, lambdaseq=lambdaseq, bolasso=T)
+    ###### LR #####
+    # Variant: Variable LR Selection based on Inclusion Probabilities at a single lambda (LR) 
+    # randomize: penalization lambda is decreased by random factors
+    model_lr <- mystability_glmnet(xscaled, y, subsamples = 104, alphaval=updatedalpha, mystandardize=F,
                                  bolasso=T, randomize=T, setseed=F, lambdaseq=lambdaseq)
+    # the lambda value for LR is determined by glmnet
+    inclprob_lr <- model_lr[lambdaindex_glmnet,]
   
-  #the lambda value for LR is determined by glmnet
-  inclprob_lr <- model_lr[lambdaindex_glmnet,]
-  
-  # Ordered vars and probabilities according to the inclusion probabilities.
-  orderedvars_lr <- colnames(xscaled)[order(inclprob_lr, decreasing=T)]
-  orderedprobs_lr <- inclprob_lr[orderedvars_lr]
-  
-  
-  ###### LRC #####
-  # Variant: Variable LR Selection based on Inclusion Probabilities at a single lambda (LRC) 
-  bestlambdaindex_lrc <- crossvalidate(xscaled, y, folds=5, variant="lrc", 
+    # Ordered vars and probabilities according to the inclusion probabilities.
+    orderedvars_lr <- names(inclprob_lr)[order(inclprob_lr, decreasing=T)]
+    orderedprobs_lr <- inclprob_lr[orderedvars_lr]
+    ###### LRC #####
+    # Variant: Variable LR Selection based on Inclusion Probabilities at a single lambda (LRC) 
+    bestlambdaindex_lrc <- crossvalidate(xscaled, y, folds=5, variant="lrc", 
                                        alphaval=updatedalpha, lambdaseq=lambdaseq, seed=seed)
-  inclprob_lrc <- model_lr[bestlambdaindex_lrc,]
+    inclprob_lrc <- model_lr[bestlambdaindex_lrc,]
+    # Ordered vars and probabilities according to the inclusion probabilities.
+    orderedvars_lrc <- names(inclprob_lrc)[order(inclprob_lrc, decreasing=T)]
+    orderedprobs_lrc <- inclprob_lrc[orderedvars_lrc]
+    ###### LS #####
+    # Variant: Variable LR Selection based on Inclusion Probabilities at a single lambda (LS) 
+    model_ls <- elastic_net_stability(as.matrix(xscaled) , as.matrix(y), mystandardize=F,
+                                      cv_parameter=updatedalpha, modality="path", setseed=F, lambdaseq=lambdaseq)
   
-  # Ordered vars and probabilities according to the inclusion probabilities.
-  orderedvars_lrc <- colnames(xscaled)[order(inclprob_lrc, decreasing=T)]
-  orderedprobs_lrc <- inclprob_lrc[orderedvars_lrc]
+    # select the lambda from glmnet
+    inclprob_ls <- model_ls$path[lambdaindex_glmnet,]
   
+    # Ordered vars and probabilities according to the inclusion probabilities.
+    orderedvars_ls <- names(inclprob_ls)[order(inclprob_ls, decreasing=T)]
+    orderedprobs_ls <- inclprob_ls[orderedvars_ls]
   
-  ###### LS #####
-  # Variant: Variable LR Selection based on Inclusion Probabilities at a single lambda (LS) 
-  model_ls <- elastic_net_stability(as.matrix(xscaled) , as.matrix(y), mystandardize=F,
-                                    cv_parameter=updatedalpha, mode="path", setseed=F, lambdaseq=lambdaseq)
-  
-  # select the lambda from glmnet
-  inclprob_ls <- model_ls$path[lambdaindex_glmnet,]
-  
-  # Ordered vars and probabilities according to the inclusion probabilities.
-  orderedvars_ls <- colnames(xscaled)[order(inclprob_ls, decreasing=T)]
-  orderedprobs_ls <- inclprob_ls[orderedvars_ls]
-  
-  ###### LSC #####
-  # Variant: Variable LR Selection based on Inclusion Probabilities at a single lambda (LSC) 
-  bestlambdaindex_lsc <- crossvalidate(xscaled, y, folds=5, variant="lsc",
-                                       alphaval=updatedalpha, lambdaseq=lambdaseq, seed=seed)
-  
-  inclprob_lsc <- model_ls$path[bestlambdaindex_lsc,]
-  
-  # Ordered vars and probabilities according to the inclusion probabilities.
-  orderedvars_lsc <- colnames(xscaled)[order(inclprob_lsc, decreasing=T)]
-  orderedprobs_lsc <- inclprob_lsc[orderedvars_lsc]
-  
-  ###### TRUE BETA #####
-  # "True" beta for evaluation gold-standard
-  oraclebeta <- oracle
-  names(oraclebeta) <- colnames(xscaled)
-  truevars <- names(which(oraclebeta != 0))
-  
-  ###### OUTPUT #####
-  # The complete models
-  models <- list(enc=model_enc,
+    ###### LSC #####
+    # Variant: Variable LR Selection based on Inclusion Probabilities at a single lambda (LSC) 
+    bestlambdaindex_lsc <- crossvalidate(xscaled, y, folds=5, variant="lsc",
+                                         alphaval=updatedalpha, lambdaseq=lambdaseq, seed=seed)
+    inclprob_lsc <- model_ls$path[bestlambdaindex_lsc,]
+    # Ordered vars and probabilities according to the inclusion probabilities.
+    orderedvars_lsc <- names(inclprob_lsc)[order(inclprob_lsc, decreasing=T)]
+    orderedprobs_lsc <- inclprob_lsc[orderedvars_lsc]
+    ###### OUTPUT #####
+    # The complete models
+    models <- list(enc=model_enc,
                  ss=model_ss,
                  sr=model_sr,
                  ps=model_ps,
@@ -775,25 +879,54 @@ runmodels <- function(xscaled, y, seed, iterations, oracle){
                  lr=model_lr,
                  ls=model_ls,
                  bma=model_bma,
-                 bmac=model_bmac
-  )
-  
-  # Variables Selected: These methods do not give an inclusion probability list
-  varsout <- list(truevars=truevars, #"Simulated Truth"
-                  enc=nonzerovars_enc, #ENC
-                  ps=model_ps$pferselect, #PS
-                  pr=model_pr$pferselect #PR
-  )
-  
-  # Inclusion Probabilities
-  problist <- list(lr=orderedprobs_lr, #LR
-                   lrc=orderedprobs_lrc, #LRC
-                   ls=orderedprobs_ls, #LS
-                   lsc=orderedprobs_lsc, #LSC
-                   ss=model_ss$stability, #SS
-                   sr=model_sr$stability, #SR
-                   bma=model_bma$inclprob, #BMA
-                   bmac=model_bmac$inclprob #BMAC
-  )
+                 bmac=model_bmac)
+    # Variables Selected: These methods do not give an inclusion probability list
+    varsout <- list(truevars=truevars, #"Simulated Truth"
+                    enc=nonzerovars_enc, #ENC
+                    ps=model_ps$pferselect, #PS
+                    pr=model_pr$pferselect #PR
+                    )
+    # Inclusion Probabilities
+    problist <- list(lr=orderedprobs_lr, #LR
+                     lrc=orderedprobs_lrc, #LRC
+                     ls=orderedprobs_ls, #LS
+                     lsc=orderedprobs_lsc, #LSC
+                     ss=model_ss$stability, #SS
+                     sr=model_sr$stability, #SR
+                     bma=model_bma$inclprob, #BMA
+                     bmac=model_bmac$inclprob #BMAC
+                     )
+  } else {
+    models <- list(ss=model_ss,
+                   ssw=model_ssw,
+                   sr=model_sr,
+                   srw=model_srw
+                   )
+    # Variables Selected: These methods do not give an inclusion probability list
+    varsout <- list(truevars=truevars) #"Simulated Truth
+    # Inclusion Probabilities
+    problist <- list(ss=model_ss$stability,  #SS
+                     ssw=model_ssw$stability,#SSW
+                     sr=model_sr$stability,  #SR
+                     srw=model_srw$stability #SRW
+                     )
+  }
   return(list(models=models, varsout=varsout, inclprobs=problist))
 }
+
+###### VIII. Non-Linear Models ######
+
+## Random Forests Classifier ##
+randomforestit <- function(x, y){
+  set.seed(101)
+  fy <- as.factor(y)
+  #tunedforest <- tuneRF(x, fy, trace=T, plot=T, doBest=T, ntreeTry=5000)
+  rfresults <- randomForest(x, fy, ntree=10000)
+  impdf <- data.frame(importance(rfresults))
+  impdf$var <- rownames(impdf)
+  impsorted <- impdf[order(impdf$MeanDecreaseGini, decreasing=T),]
+  #bootstrapval <- bootstrapit(x, y, iterations=100, numtree=1000)
+  outlist <- list(medianval=impsorted, rfobject=rfresults)
+  return(outlist)
+}
+

@@ -6,7 +6,6 @@ setwd(workdir)
 ###### I. libraries and locales ######
 source('./regeval_packages.R')
 
-
 ##### II. Load in algorithms #####
 source('./regeval_algorithms.R')
 
@@ -17,10 +16,14 @@ load(file="example_dataset.rda")
 load(file="example_response.rda") 
 
 ##### b. Create the Design Matrix for the evaluation ######
-createdesignmatrix <- function(countdata) {
+createdesignmatrix <- function(countdata, logtransform) {
   ## Remove rows and columns with zero rowSums and colSums ##
   ## Convert sequence counts to log probabilities ##
-  logprobx <-  logprobclean(countdata)
+  if (logtransform == T){    
+    logprobx <-  logprobclean(countdata)
+  } else {
+    logprobx <-  exp(logprobclean(countdata))
+  }
   ## Address sum-to-1 redundancy ## 
   ## Select reference variable. (Equation 3) ##
   referencevarindex <- order(colSums(countdata), decreasing=T)[1]
@@ -31,7 +34,12 @@ createdesignmatrix <- function(countdata) {
   return(nonredundantxscaled)
 }
 
-designmatrix <- createdesignmatrix(exampledata)
+getdesignmatrix <- function(logtransform){
+  dmatrix <- createdesignmatrix(exampledata, logtransform=logtransform)
+  return(dmatrix)
+}
+# Change to logtransform=F for probabilities
+designmatrix <- getdesignmatrix(logtransform=F)
 
 
 ##### c. Get signal to noise from original data #####
@@ -71,10 +79,14 @@ snrofdata <- getsnr(designmatrix, exampleresponse)
 # xscaled <- designmatrix
 # cutoff <- 0.01
 # signaltonoise <- snrofdata
-# betavalue <- "unif"
+betavalue <- "unif"
 
+xscaled <- setuplist$setup
+signaltonoise <- 16
+cutoff <- 0.01
+weightedlambdamodels <- F
 ##### Set up models and output for simulation #####
-simulation <- function(xscaled, signaltonoise, cutoff, betavalue="unif"){  
+simulation <- function(xscaled, signaltonoise, cutoff, betavalue="unif", weightedlambdamodels=F){  
   seed <- floor(runif(n=1, min=0, max=1000))
   p <- ncol(xscaled)
   n <- nrow(xscaled)
@@ -131,7 +143,10 @@ simulation <- function(xscaled, signaltonoise, cutoff, betavalue="unif"){
   ## rnorm(n,mean=0,sd=sigmanoise) is the error term ##
   y <- y_hat + rnorm(n,mean=0,sd=sigmanoise)
   y <- scale(y)
-  out <- runmodels(xscaled, y, seed, iterations=10000, oracle=beta)
+  # weightedlambdamodels computes the inclusion probabilities using weights on the glmnet lambda grid
+  # weights are based on the average number of non-zero regression coefficients across subsamples or resamples
+  out <- runmodels(xscaled, y, seed, iterations=10000, oracle=beta, weightedlambdamodels=weightedlambdamodels)
+  
   return(out)
 }
   
@@ -156,7 +171,7 @@ testsimul <- expand.grid(setup=names(setuplist),
                             simulnum=c(1:3))
 
 ### For a few number of simulations, activate this ###
-# simuloptions <- testsimul
+simuloptions <- testsimul
 
 ##### VI. Run simulation #####
 runsimulation <- mclapply(1:nrow(simuloptions), function(rownum){
@@ -170,7 +185,7 @@ runsimulation <- mclapply(1:nrow(simuloptions), function(rownum){
   if(length(simulout) > 0){
     saveRDS(simulout, sprintf("simul_%s_%0.2f_%0.2f_%s_%d.rds", setup, snr, cutoff, betavalue, simulnum))  
     }
-  }, mc.cores=4)
+  }, mc.cores=1)
 
 # NB: Ignore these warnings.
 # 20: In predict.lm.spike(object = train_path[[fold]][[feature]],  ... :

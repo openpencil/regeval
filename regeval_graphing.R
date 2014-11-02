@@ -434,7 +434,7 @@ sapply(ou, function(onesorunif){
   # FINAL PLOTS
   # Variability in FSCORE: Figure 4a and Figure 4b
   # Variability in FPR: Figure 5a and Figure 5b
-  sapply(c("FPR", "TPR", "FSCORE", "PRECISION", "RECALL"), function(metric){
+sapply(c("FPR", "TPR", "FSCORE", "PRECISION", "RECALL"), function(metric){
     allmodels <- mergemelt[variable==metric & !is.na(value)]
     p <- ggplot(allmodels, aes(x=modelnum, y=value, fill=model))
     p <- p + geom_boxplot(outlier.size=1, fatten=0.5)
@@ -445,7 +445,7 @@ sapply(ou, function(onesorunif){
     p <- p + xlab("Approaches") + ylab(toupper(metric))
     p <- p + labs(fill="Approaches")
     p <- p + theme(axis.text.x = element_text(size=10, angle = 300, hjust = 0, colour = "black"))
-    p <- p + ggtitle(paste(sprintf("%s: Variable selection across the 11 approaches", metric))
+    p <- p + ggtitle(paste(sprintf("%s: Variable selection across the 11 approaches", metric)))
     ggsave(sprintf("VARSELECT_%s_%s.pdf", metric, onesorunif), plot=p, width=9, height=6.5, units="in", limitsize=F)
   },simplify=F)
  },simplify=F)
