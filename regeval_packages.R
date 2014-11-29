@@ -29,7 +29,7 @@ installpackages<- function(pkgs) {
 
 installpackages(c("ggplot2", "plyr", "Hmisc", "reshape", "BoomSpikeSlab",
                   "reshape2", "scales", "gridExtra", "glmnet", "corrplot",
-                  "doMC","RColorBrewer", "data.table", "digest"))
+                  "doMC","RColorBrewer", "data.table", "digest", "caret"))
 
 ##### II. Set locales #####
 Sys.setlocale("LC_CTYPE","en_US.UTF-8")

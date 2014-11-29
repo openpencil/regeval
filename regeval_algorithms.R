@@ -575,9 +575,11 @@ crossvalidate <- function(x, y, folds, variant, alphaval, lambdaseq,
         #print(sprintf("feature:%s", feature))
         if (defaultmode == "gaussian"){
           #E(y|X)=\beta*X
+          cat("Starting predictions. \n")
           predicttestreg <- predict(object=train_path[[fold]][[feature]],
                                   newdata=as.matrix(testtrain[[fold]]$test[,-1]),
                                   type="response", burn=round(0.1*iterations, 0)) 
+          cat("Done with predictions. \n")
           medianpred <- apply(predicttestreg, 1, median)
           y_test <- testtrain[[fold]]$test[,1]
           mse_test <- mean((y_test - medianpred)^2)
@@ -633,6 +635,8 @@ normalize_smooth <- function(x) {
 }
 
 logprobclean <- function(datainput){
+  # Zero rows eliminated to remove experimental negatives, blank/water, reagent and mouse chow controls 
+  # not relevant to the study question and only related to quality control.
   removezeros <- datainput[which(rowSums(datainput) != 0), which(colSums(datainput) != 0)]
   # add smoother. log zero is not defined, so add 1 and take the log. 1 is the smallest unit of reads.
   addsmoother <- removezeros+1
@@ -759,7 +763,7 @@ runmodels <- function(xscaled, y, seed, iterations, oracle, weightedlambdamodels
   # exact=T re-estimates the coefficients at the specified value of lambda.
   enc_coefficients <- coef(object=model_enc, s=model_glmnet_cv$lambda, exact=F)
   betas_enc <- as.vector(enc_coefficients)
-  # remove the beta of of the intercept term
+  # remove the beta of the intercept term
   names(betas_enc) <- rownames(enc_coefficients)
   nonzerovars_enc <- names(betas_enc)[which(betas_enc!=0)]
   
@@ -920,13 +924,41 @@ runmodels <- function(xscaled, y, seed, iterations, oracle, weightedlambdamodels
 randomforestit <- function(x, y){
   set.seed(101)
   fy <- as.factor(y)
-  #tunedforest <- tuneRF(x, fy, trace=T, plot=T, doBest=T, ntreeTry=5000)
-  rfresults <- randomForest(x, fy, ntree=10000)
+  rfresults <- randomForest(x, fy, ntree=10000, na.omit=T)
   impdf <- data.frame(importance(rfresults))
   impdf$var <- rownames(impdf)
   impsorted <- impdf[order(impdf$MeanDecreaseGini, decreasing=T),]
-  #bootstrapval <- bootstrapit(x, y, iterations=100, numtree=1000)
   outlist <- list(medianval=impsorted, rfobject=rfresults)
   return(outlist)
 }
 
+## Training a random forest using tuning parameters from the caret package
+# Refer to http://www.edii.uclm.es/~useR-2013/Tutorials/kuhn/user_caret_2up.pdf
+# number: k fold crossvalidation
+# repeats: number of times to repeat cross-validation
+# metric: used to measure the model accuracy. "ROC" "Kappa" "Accuracy" "Rsquared"
+# method: "rf", "parRF" "cforest"
+# numtree: number of models to be built
+# mtry: number of variables to consider at each split in the random forest; mtries: grid of mtry values.
+randomforestpar <- function(x, y, whichmetric, model, numtree, mtries){
+  fy               <- as.factor(y)
+  if (whichmetric == "Kappa"| whichmetric == "Accuracy") {
+    ctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 10)
+  } else if (whichmetric == "ROC"){
+    ctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 10, classProbs = TRUE, summaryFunction = twoClassSummary)
+  }  
+  grid_rf <- expand.grid(.mtry = mtries)
+  if (model == "cforest") {
+    # http://stackoverflow.com/questions/20337137/run-cforest-with-controls-cforest-unbiased-using-caret-package
+    modelrf <- train(x, fy, method = model, metric = whichmetric, controls = cforest_unbiased(ntree = numtree), tuneGrid = grid_rf) 
+    importantvars <- varImp(object = modelrf)
+  } else {
+    modelrf <- train(x, fy, method = model, metric = whichmetric, trControl = ctrl, ntree= numtree, tuneGrid = grid_rf) 
+    importantvars <- varImp(object = modelrf)
+  }
+  imporder <- order(importantvars$importance$Overall, decreasing=T)
+  imparray <- array(importantvars$importance)
+  impsorted <- imparray[imporder, ]
+  colnames(impsorted) <- "importance"
+  return(list(medianval=impsorted, rfobject=modelrf))
+}
