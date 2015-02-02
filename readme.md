@@ -25,3 +25,6 @@ Please step-through the code and comments within the following R scripts for det
 |`regeval_colorlegend.R` | Corrplot color legend | Visualization |
 |`regeval_corrplot.R`| Slightly modified corrplot code |  Visualization |
 |`regeval_colored_dendrogram.R` | Slightly modified cluster dendrogram code | Visualization |
+
+
+[![Bitdeli Badge](https://d2weczhvl823v0.cloudfront.net/openpencil/regeval/trend.png)](https://bitdeli.com/free "Bitdeli Badge")
