@@ -1,7 +1,7 @@
 ##Scope
 The _regeval_ repository provides R scripts that implement a simulation design for comparing a suite of regression methods for high-dimensional microbiome data. For the complete background, simulation and model specifications as well as evaluation results, please review:
 
-<span style="color:#5e005e;">Shankar J, Szpakowski S, Solis NV, Mounaud S, Liu H, Losada L, et al. A systematic evaluation of high-dimensional, ensemble-based regression for exploring large model spaces in microbiome analyses. BMC Bioinformatics. 2015 Feb;16(1):31+. Available from: http://dx.doi.org/10.1186/s12859-015-0467-6.</span>
+<span style="color:#5e005e;">Shankar J, Szpakowski S et al. A systematic evaluation of high-dimensional, ensemble-based regression for exploring large model spaces in microbiome analyses. BMC Bioinformatics. 2015 Feb;16(1):31+. Available from: http://dx.doi.org/10.1186/s12859-015-0467-6.</span>
 
 
 The files regeval_simulation.R and regeval_analysis.R are the entry points for the running the scripts.
