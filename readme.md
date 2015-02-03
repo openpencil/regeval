@@ -3,7 +3,6 @@ The `regeval` repository provides R scripts that implement a simulation design f
 
 > Shankar J, Szpakowski S et al. A systematic evaluation of high-dimensional, ensemble-based regression for exploring large model spaces in microbiome analyses. BMC Bioinformatics. 2015 Feb;16(1):31+. Available from: http://dx.doi.org/10.1186/s12859-015-0467-6.
 
-
 #### R code
 
 The files `regeval_simulation.R` and `regeval_analysis.R` are the entry points for the running the scripts.
@@ -25,3 +24,11 @@ Please step-through the code and comments within the following R scripts for det
 |`regeval_colorlegend.R` | Corrplot color legend | Visualization |
 |`regeval_corrplot.R`| Slightly modified corrplot code |  Visualization |
 |`regeval_colored_dendrogram.R` | Slightly modified cluster dendrogram code | Visualization |
+
+#### Additional reading and code:
+
+For an application of the best-performing Bayesian ensemble regression model on experimental mouse microbiome data, please review:
+
+> Shankar, J. et al. Using Bayesian modelling to investigate factors governing antibiotic-induced Candida albicans colonization of the GI tract. Scientific Reports. 5, 8131; DOI:10.1038/srep08131 (2015). Available at: http://dx.doi.org/10.1038/srep08131
+
+R Code for visualizing model findings can be found in the `bayesianmice repository` @ https://github.com/openpencil/bayesianmice
