@@ -24,6 +24,7 @@ Please step-through the code and comments within the following R scripts for det
 |`regeval_colorlegend.R` | Corrplot color legend | Visualization |
 |`regeval_corrplot.R`| Slightly modified corrplot code |  Visualization |
 |`regeval_colored_dendrogram.R` | Slightly modified cluster dendrogram code | Visualization |
+|`mit_license.txt`    | MIT License | License |
 
 #### Additional reading and code:
 
@@ -32,3 +33,28 @@ For an application of the best-performing Bayesian ensemble regression model on 
 > Shankar, J. et al. Using Bayesian modelling to investigate factors governing antibiotic-induced Candida albicans colonization of the GI tract. Scientific Reports. 5, 8131; DOI:10.1038/srep08131 (2015). Available at: http://dx.doi.org/10.1038/srep08131
 
 R Code for visualizing model findings can be found in the `bayesianmice repository` @ https://github.com/openpencil/bayesianmice
+
+
+#### Citing and using the R scripts in the `regeval` repository
+[![DOI](https://zenodo.org/badge/doi/10.5281/zenodo.15241.svg)](http://dx.doi.org/10.5281/zenodo.15241)
+
+Please cite this repository as:
+> Shankar J. regeval: A systematic evaluation of high-dimensional, ensemble based regression for exploring large model spaces in microbiome analyses. GitHub. 2014. http://github.com/openpencil/regeval. DOI: 10.5281/zenodo.15241
+
+BibTeX:
+`@MISC{Shankar2014regeval,
+  title        = "\textit{regeval}: A systematic evaluation of
+                  high-dimensional, ensemble based regression for exploring
+                  large model spaces in microbiome analyses",
+  author       = "Shankar, Jyoti",
+  publisher    = "GitHub",
+  year         =  2014,
+  url          = "http://github.com/openpencil/regeval",
+  howpublished = "\url{http://github.com/openpencil/regeval}",
+  keywords     = "high-dimensional data, ensemble regression, evaluation",
+  doi          = "10.5281/zenodo.15241"
+}
+`
+
+Please review the terms of the MIT License in `mit_license.txt`
+Copyright (c) 2014 Jyoti Shankar
