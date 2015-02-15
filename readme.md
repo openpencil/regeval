@@ -37,7 +37,7 @@ R Code for visualizing model findings can be found in the `bayesianmice reposito
 
 #### Citing the `regeval` repository
 Please cite this repository as:
-> Shankar J. regeval: A systematic evaluation of high-dimensional, ensemble based regression for exploring large model spaces in microbiome analyses. GitHub. 2014. http://github.com/openpencil/regeval. [![DOI](https://zenodo.org/badge/doi/10.5281/zenodo.15241.svg)](http://dx.doi.org/10.5281/zenodo.15241)
+> Shankar J. regeval: A systematic evaluation of high-dimensional, ensemble based regression for exploring large model spaces in microbiome analyses. GitHub. 2014. http://github.com/openpencil/regeval. DOI: 10.5281/zenodo.15241
 
 BibTeX:
 ```javascript
@@ -55,7 +55,4 @@ BibTeX:
 }
 ```
 
-
-Please review the terms of the MIT License in `mit_license.txt`
-
-Copyright (c) 2014 Jyoti Shankar
+[![DOI](https://zenodo.org/badge/doi/10.5281/zenodo.15241.svg)](http://dx.doi.org/10.5281/zenodo.15241) Copyright (c) 2014 Jyoti Shankar
