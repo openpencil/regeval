@@ -32,24 +32,31 @@ For an application of the best-performing Bayesian ensemble regression model on 
 
 > Shankar, J. et al. Using Bayesian modelling to investigate factors governing antibiotic-induced Candida albicans colonization of the GI tract. Scientific Reports. 5, 8131; DOI:10.1038/srep08131 (2015). Available at: http://dx.doi.org/10.1038/srep08131
 
-R Code for visualizing model findings can be found in the `bayesianmice repository` @ https://github.com/openpencil/bayesianmice
-
 
 #### Citing the `regeval` repository
 Please cite this repository as:
-> Shankar J. regeval: A systematic evaluation of high-dimensional, ensemble based regression for exploring large model spaces in microbiome analyses. GitHub. 2014. http://github.com/openpencil/regeval.
+> Shankar J, Szpakowski S et al. A systematic evaluation of high-dimensional, ensemble-based regression for exploring large model spaces in microbiome analyses. BMC Bioinformatics. 2015 Feb;16(1):31+. Available from: http://dx.doi.org/10.1186/s12859-015-0467-6. _regeval_ repository: http://github.com/openpencil/regeval.
 
 BibTeX:
 ```javascript
-@MISC{Shankar2014regeval,
-  title        = "\textit{regeval}: A systematic evaluation of
-                  high-dimensional, ensemble based regression for exploring
-                  large model spaces in microbiome analyses",
-  author       = "Shankar, Jyoti",
-  publisher    = "GitHub",
-  year         =  2014,
-  url          = "http://github.com/openpencil/regeval",
-  howpublished = "\url{http://github.com/openpencil/regeval}",
-  keywords     = "high-dimensional data, ensemble regression, evaluation",
+@ARTICLE{Shankar2015systematic,
+  title    = "A systematic evaluation of high-dimensional, ensemble-based
+              regression for exploring large model spaces in microbiome
+              analyses",
+  author   = "Shankar, Jyoti and Szpakowski, Sebastian and Solis, Norma V and
+              Mounaud, Stephanie and Liu, Hong and Losada, Liliana and Nierman,
+              William C and Filler, Scott G",
+  journal  = "BMC bioinformatics",
+  volume   =  16,
+  number   =  1,
+  pages    = "31",
+  month    =  "1~" # feb,
+  year     =  2015,
+  url      = "http://dx.doi.org/10.1186/s12859-015-0467-6",
+  issn     = "1471-2105",
+  pmid     = "25638274",
+  doi      = "10.1186/s12859-015-0467-6",
+  pmc      = "PMC4339743",
+  note     =  "regeval repository:\url{http://github.com/openpencil/regeval}"
 }
 ```
