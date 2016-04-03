@@ -38,7 +38,7 @@ Please cite this repository as:
 > Shankar J, Szpakowski S et al. A systematic evaluation of high-dimensional, ensemble-based regression for exploring large model spaces in microbiome analyses. BMC Bioinformatics. 2015 Feb;16(1):31+. Available from: http://dx.doi.org/10.1186/s12859-015-0467-6. _regeval_ repository: http://github.com/openpencil/regeval.
 
 BibTeX:
-```javascript
+```bibtex
 @ARTICLE{Shankar2015systematic,
   title    = "A systematic evaluation of high-dimensional, ensemble-based
               regression for exploring large model spaces in microbiome
